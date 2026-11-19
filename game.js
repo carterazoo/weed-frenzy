@@ -30,7 +30,25 @@ const RUSH_SECONDS = 20;       // rush hour: last N seconds spawn twice as fast
 // dispensary. Light the whole word for a frenzy bonus. Any 5-letter word works.
 const COMBO_WORD = 'BLAZE';
 const FRENZY_BONUS = 50;
-const JAR_ITEMS = 34;          // bills and coins in a full jar
+const JAR_ITEMS = 34;
+
+// Start screen logo. Set to 'assets/logo.png' once you have one.
+const LOGO_FILE = 'assets/logo.png';
+
+// Sounds. Put MP3s in assets/sounds/ and fill in the file names, e.g.
+//   pop: 'assets/sounds/pop.mp3'
+// Any left as null are simply skipped.
+const SOUNDS = {
+  music: null,     // background loop
+  pop: null,       // a customer appears
+  pickup: null,    // you pick up an order
+  deliver: null,   // order sent to the right shop
+  tip: null,       // tip collected
+  letter: null,    // a BLAZE letter lights
+  frenzy: null,    // WEED FRENZY!
+  miss: null,      // too slow / wrong shop
+  gameover: null,  // level over
+};          // bills and coins in a full jar
 const FRENZY_TEXT = 'WEED FRENZY!';   // banner shown when the word is complete
 
 // How many orders of the same product you can pick up before clicking a shop.
@@ -68,8 +86,9 @@ const HOUSES = HOUSE_ROWS.flatMap(r => HOUSE_X.map(x => ({ door: [x, r.door], bu
 
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
 
-class GameScene extends Phaser.Scene {
-  constructor() { super('game'); }
+// ---------- Start screen (also loads all the art and sound) ----------
+class TitleScene extends Phaser.Scene {
+  constructor() { super('title'); }
 
   preload() {
     this.load.image('map', 'assets/map-suburbs.jpg');
@@ -86,11 +105,74 @@ class GameScene extends Phaser.Scene {
     [...CUSTOMERS, 'cust-narc'].forEach(k => this.load.image(k, `assets/${k}.png`));
     ['ui-panel', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
       .forEach(k => this.load.image(k, `assets/${k}.png`));
+    if (LOGO_FILE) this.load.image('logo', LOGO_FILE);
+    Object.entries(SOUNDS).forEach(([k, file]) => { if (file) this.load.audio(k, file); });
   }
 
   create() {
     this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
+
+    // Dimmed map behind everything
+    this.add.image(W / 2, H / 2, 'map').setDisplaySize(H, H);
+    this.add.rectangle(W / 2, H / 2, W, H, 0x0c0a12, 0.6);
+
+    // Logo: the real image once assets/logo.png exists, a text stand-in until then
+    if (this.textures.exists('logo')) {
+      const logo = this.add.image(W / 2, 124, 'logo');
+      logo.setScale(Math.min(560 / logo.width, 226 / logo.height));
+      this.tweens.add({ targets: logo, scale: logo.scale * 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.InOut' });
+    } else {
+      this.add.text(W / 2, 130, 'WEED FRENZY', {
+        fontFamily: 'Arial Black, Arial', fontSize: '76px', color: '#8ee34a',
+        stroke: '#1b3a0e', strokeThickness: 14,
+      }).setOrigin(0.5);
+    }
+
+    // How to play
+    const box = this.add.graphics();
+    box.fillStyle(0x14121c, 0.88).fillRoundedRect(W / 2 - 300, 250, 600, 330, 22);
+    box.lineStyle(4, 0x8ee34a).strokeRoundedRect(W / 2 - 300, 250, 600, 330, 22);
+    this.add.text(W / 2, 282, 'HOW TO PLAY', {
+      fontFamily: 'Arial Black, Arial', fontSize: '26px', color: '#ffd54f',
+    }).setOrigin(0.5);
+    const steps = [
+      'Customers pop up wanting Flower or Gummies.',
+      'Click or drag them to the shop that sells it.',
+      'Grab up to 3 of the same item and send them at once.',
+      'Same item in a row lights up B-L-A-Z-E. Fill it for a WEED FRENZY bonus!',
+      'Click the cash tips before they disappear.',
+      `Too slow or wrong shop costs a star. Make $${CASH_TARGET} before time runs out.`,
+    ];
+    this.add.text(W / 2 - 270, 314, steps.map((t, i) => `${i + 1}.  ${t}`).join('\n'), {
+      fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', lineSpacing: 10,
+      wordWrap: { width: 540 },
+    });
+
+    const start = this.add.text(W / 2, 640, 'CLICK TO START', {
+      fontFamily: 'Arial Black, Arial', fontSize: '34px', color: '#ffffff',
+      stroke: '#1b3a0e', strokeThickness: 8,
+    }).setOrigin(0.5);
+    this.tweens.add({ targets: start, scale: 1.08, yoyo: true, repeat: -1, duration: 600 });
+
+    // The first click also unlocks sound in the browser.
+    this.input.once('pointerdown', () => this.scene.start('game'));
+  }
+}
+
+// Plays a sound only if its file is set in SOUNDS (silently skips otherwise).
+function sfx(scene, key, config) {
+  if (scene.cache.audio.exists(key)) scene.sound.play(key, config);
+}
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('game'); }
+
+
+  create() {
+    this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
     this.makeJarTextures();
+    this.sound.stopAll();
+    sfx(this, 'music', { loop: true, volume: 0.35 });
     this.cash = 0;
     this.stars = START_STARS;
     this.timeLeft = LEVEL_SECONDS * 1000;
@@ -254,6 +336,7 @@ class GameScene extends Phaser.Scene {
     this.time.paused = this.paused;
     if (this.paused) {
       this.tweens.pauseAll();
+      this.sound.pauseAll();
       this.select(null);
       this.pauseCover = this.add.rectangle(MAP / 2, H / 2, MAP, H, 0x000000, 0.6)
         .setDepth(45).setInteractive();
@@ -264,6 +347,7 @@ class GameScene extends Phaser.Scene {
       this.pauseText.setText('RESUME');
     } else {
       this.tweens.resumeAll();
+      this.sound.resumeAll();
       this.pauseCover.destroy();
       this.pauseLabel.destroy();
       this.pauseText.setText('PAUSE');
@@ -293,6 +377,7 @@ class GameScene extends Phaser.Scene {
     const order = { house, product, customer, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
     house.order = order;
     this.orders.push(order);
+    sfx(this, 'pop', { volume: 0.5 });
     // Click to pick up (on release, so a drag doesn't count as a click),
     // or drag it onto a shop.
     bubble.orderRef = order;
@@ -326,6 +411,7 @@ class GameScene extends Phaser.Scene {
       return;
     }
     this.selected.push(order);
+    sfx(this, 'pickup', { volume: 0.6 });
     order.bubble.setStrokeStyle(5, 0xffffff);
     this.tweens.add({ targets: order.bubble, scale: { from: 1.25, to: 1 }, duration: 150 });
   }
@@ -398,6 +484,7 @@ class GameScene extends Phaser.Scene {
     const batch = [...this.selected];
     this.select(null);
     if (batch[0].product.key === disp.product) {
+      sfx(this, 'deliver');
       batch.forEach((order, i) => this.deliver(order, disp, i));
     } else {
       // Every order sent to the wrong shop is a miss.
@@ -474,6 +561,7 @@ class GameScene extends Phaser.Scene {
       this.tweens.killTweensOf(tip);
       tip.destroy();
       this.floatText(house.x + 26, house.y - 24, `tip +$${amount}`, '#ffe082');
+      sfx(this, 'tip');
       // The tip flies over to the jar, then counts.
       const coin = this.add.image(house.x + 26, house.y, 'jar-coin').setDepth(40).setDisplaySize(36, 36);
       this.tweens.add({
@@ -508,6 +596,7 @@ class GameScene extends Phaser.Scene {
       const lit = i < count;
       t.setTexture(`letter-${i}-${lit ? 'on' : 'off'}`);
       if (lit && i === count - 1) {
+        sfx(this, 'letter', { volume: 0.7 });
         this.tweens.add({ targets: t, scale: { from: t.baseScale * 1.6, to: t.baseScale }, duration: 250, ease: 'Back.Out' });
       }
     });
@@ -521,6 +610,7 @@ class GameScene extends Phaser.Scene {
   }
 
   showFrenzy(disp) {
+    sfx(this, 'frenzy');
     this.cameras.main.flash(200, 255, 255, 255);
     const t = this.add.text(MAP / 2, H / 2, `${FRENZY_TEXT}\n+$${FRENZY_BONUS}`, {
       fontFamily: 'Arial Black, Arial', fontSize: '68px', color: '#ffffff', align: 'center',
@@ -539,6 +629,7 @@ class GameScene extends Phaser.Scene {
     this.removeOrder(order);
     this.resetCombo();
     this.stars -= 1;
+    sfx(this, 'miss');
     this.floatText(house.bx, house.by - 30, label, '#ff6b6b');
     this.cameras.main.shake(150, 0.004);
     this.updateHud();
@@ -610,6 +701,8 @@ class GameScene extends Phaser.Scene {
   endGame(won) {
     if (this.over) return;
     this.over = true;
+    this.sound.stopAll();
+    sfx(this, 'gameover');
     this.ringGfx.clear();
     this.select(null);
 
@@ -641,5 +734,6 @@ new Phaser.Game({
   height: H * RES,
   backgroundColor: '#14121c',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  scene: [GameScene],
+  audio: { disableWebAudio: true },   // plain HTML5 audio also works from a double-clicked file
+  scene: [TitleScene, GameScene],
 });
