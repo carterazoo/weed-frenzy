@@ -40,10 +40,10 @@ const LOGO_FILE = 'assets/logo.png';
 // Any left as null are simply skipped.
 const SOUNDS = {
   music: null,     // background loop
-  pop: null,       // a customer appears
-  pickup: null,    // you pick up an order
+  pop: 'assets/sounds/pop.mp3',       // a customer appears
+  pickup: 'assets/sounds/pickup.mp3',    // you pick up an order
   deliver: null,   // order sent to the right shop
-  tip: null,       // tip collected
+  tip: 'assets/sounds/tip.mp3',       // tip collected
   letter: null,    // a BLAZE letter lights
   frenzy: null,    // WEED FRENZY!
   miss: null,      // too slow / wrong shop
