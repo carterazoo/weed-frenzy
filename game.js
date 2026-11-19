@@ -1,0 +1,645 @@
+// Weed Frenzy prototype (milestone 1)
+// One map, 2 dispensaries, orders with patience rings, 5 stars, tips, level timer,
+// BLAZE combo letters. Art lives in the assets folder.
+
+const W = 960;
+const H = 720;
+const RES = 2;            // render scale for sharpness
+
+// Every text object renders at the same double resolution.
+const _addText = Phaser.GameObjects.GameObjectFactory.prototype.text;
+Phaser.GameObjects.GameObjectFactory.prototype.text = function (x, y, text, style) {
+  return _addText.call(this, x, y, text, { resolution: RES, ...style });
+};
+const MAP = 720;          // map is a 720 x 720 square on the left
+const PX = 840;           // center x of the side panel (720..960)
+
+// ---- Tuning knobs (change these to adjust difficulty) ----
+const LEVEL_SECONDS = 90;      // level length
+const CASH_TARGET = 250;       // cash needed to pass the level
+const START_STARS = 5;
+const PATIENCE_MS = 14000;     // how long a customer waits (ms)
+const ORDER_PAY = 10;          // base pay per correct order
+const TIP_MIN = 3, TIP_MAX = 8;
+const TIP_LIFETIME_MS = 3000;  // how long a tip stays clickable
+const SPAWN_START_MS = 2600;   // gap between orders at level start
+const SPAWN_END_MS = 1300;     // gap between orders near the end
+const RUSH_SECONDS = 20;       // rush hour: last N seconds spawn twice as fast
+
+// Combo word: each same-product order in a row lights one letter at that
+// dispensary. Light the whole word for a frenzy bonus. Any 5-letter word works.
+const COMBO_WORD = 'BLAZE';
+const FRENZY_BONUS = 50;
+const JAR_ITEMS = 34;          // bills and coins in a full jar
+const FRENZY_TEXT = 'WEED FRENZY!';   // banner shown when the word is complete
+
+// How many orders of the same product you can pick up before clicking a shop.
+// (Later this can grow with product tiers, like the original.)
+const MAX_CARRY = 3;
+
+// Products. Swap names, colors and icon files here.
+const PRODUCTS = [
+  { key: 'flower',  name: 'Flower',  icon: 'icon-flower',  color: 0x6abf2e },
+  { key: 'gummies', name: 'Gummies', icon: 'icon-gummies', color: 0xe040a0 },
+];
+
+// Customers who phone in orders (face images in assets). The narc is saved
+// for the narc mechanic, so he isn't in the regular rotation.
+const CUSTOMERS = ['cust-yoga', 'cust-hoodie', 'cust-conspiracy', 'cust-stoner', 'cust-rapper'];
+
+// Positions match assets/map-suburbs.jpg (map coordinates, 720 x 720).
+// x, y, w, h = clickable area over the painted shop; door = where couriers leave;
+// lx, ly = where the combo letters sit.
+const DISPENSARIES = [
+  { product: 'flower',  name: 'Green Leaf', x: 203, y: 577, w: 178, h: 168, door: [205, 650], lx: 203, ly: 699 },
+  { product: 'gummies', name: 'Sugar High', x: 515, y: 577, w: 182, h: 168, door: [515, 650], lx: 515, ly: 699 },
+];
+
+// Road centerlines on the map, used to route the courier along the streets.
+const ROAD_X = [67, 318, 401, 652];         // north-south roads
+const ROAD_Y = [69, 208, 346, 487, 694];    // east-west roads
+const COURIER_SPEED = 0.42;                 // pixels per millisecond
+
+// Houses painted on the map: 3 rows of 4. door = where the courier stops and
+// the tip drops; bubble = where the order bubble appears (above the roof).
+const HOUSE_X = [148, 252, 470, 575];
+const HOUSE_ROWS = [ { door: 170, bubble: 76 }, { door: 307, bubble: 214 }, { door: 445, bubble: 352 } ];
+const HOUSES = HOUSE_ROWS.flatMap(r => HOUSE_X.map(x => ({ door: [x, r.door], bubble: [x, r.bubble] })));
+
+const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
+
+class GameScene extends Phaser.Scene {
+  constructor() { super('game'); }
+
+  preload() {
+    this.load.image('map', 'assets/map-suburbs.jpg');
+    this.load.image('icon-flower', 'assets/icon-flower.png');
+    this.load.image('icon-gummies', 'assets/icon-gummies.png');
+    this.load.image('courier', 'assets/courier.png');
+    this.load.image('tip', 'assets/tip.png');
+    this.load.image('jar-coin', 'assets/jar-coin.png');
+    this.load.image('jar-bill', 'assets/jar-bill.png');
+    for (let i = 0; i < COMBO_WORD.length; i++) {
+      this.load.image(`letter-${i}-off`, `assets/letter-${i}-off.png`);
+      this.load.image(`letter-${i}-on`, `assets/letter-${i}-on.png`);
+    }
+    [...CUSTOMERS, 'cust-narc'].forEach(k => this.load.image(k, `assets/${k}.png`));
+    ['ui-panel', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
+      .forEach(k => this.load.image(k, `assets/${k}.png`));
+  }
+
+  create() {
+    this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
+    this.makeJarTextures();
+    this.cash = 0;
+    this.stars = START_STARS;
+    this.timeLeft = LEVEL_SECONDS * 1000;
+    this.nextSpawn = 800;
+    this.selected = [];
+    this.orders = [];
+    this.comboProduct = null;
+    this.comboCount = 0;
+    this.over = false;
+    this.paused = false;
+    this.time.paused = false;
+
+    this.drawMap();
+    this.houses = HOUSES.map(h => this.makeHouse(h));
+    this.dispensaries = DISPENSARIES.map(d => this.makeDispensary(d));
+    this.makeHud();
+
+    this.ringGfx = this.add.graphics().setDepth(5);
+
+    // Clicking empty ground cancels the current selection.
+    this.setupDragging();
+
+    this.input.on('pointerdown', (pointer, objects) => {
+      if (!this.over && objects.length === 0) this.select(null);
+    });
+
+    this.showBanner('Click a customer, then the dispensary\nthat sells what they want.', 2500);
+  }
+
+  // ---------- Map ----------
+  drawMap() {
+    this.add.image(0, 0, 'map').setOrigin(0).setDisplaySize(MAP, MAP);
+  }
+
+  makeHouse(h) {
+    return { x: h.door[0], y: h.door[1], bx: h.bubble[0], by: h.bubble[1], order: null };
+  }
+
+  makeDispensary(d) {
+    const p = productByKey[d.product];
+    // Invisible click zone over the painted shop; glows on hover.
+    const box = this.add.rectangle(d.x, d.y, d.w, d.h, 0xffffff, 0.001)
+      .setInteractive({ useHandCursor: true });
+    const glow = this.add.rectangle(d.x, d.y, d.w, d.h).setStrokeStyle(5, p.color).setVisible(false);
+
+    // Combo letters on a dark pill, dim until lit.
+    // (Letter images: assets/letter-<n>-off.png / -on.png, drawn for BLAZE.)
+    this.add.rectangle(d.lx, d.ly, COMBO_WORD.length * 31 + 14, 40, 0x14121c, 0.6).setDepth(3);
+    const letters = COMBO_WORD.split('').map((ch, i) => {
+      const img = this.add.image(d.lx + (i - (COMBO_WORD.length - 1) / 2) * 31, d.ly, `letter-${i}-off`)
+        .setDepth(4);
+      img.setScale(34 / img.height);
+      img.baseScale = img.scale;
+      return img;
+    });
+
+    const disp = { ...d, x: d.door[0], y: d.door[1], box, glow, letters, color: p.color };
+    box.on('pointerdown', () => this.onDispensaryClick(disp));
+    box.on('pointerover', () => glow.setVisible(true));
+    box.on('pointerout', () => glow.setVisible(false));
+    return disp;
+  }
+
+  // ---------- HUD ----------
+  makeHud() {
+    const label = (x, y, txt, size, color = '#3b2a1a') => this.add.text(x, y, txt, {
+      fontFamily: 'Arial Black, Arial', fontSize: size, color, align: 'center', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(32);
+
+    // Wooden side panel
+    this.add.rectangle(PX, H / 2, 240, H, 0x2b1a0e).setDepth(29);
+    this.add.image(PX, H / 2, 'ui-panel').setDisplaySize(236, 714).setDepth(30);
+
+    // Product cards: icon + price per order
+    PRODUCTS.forEach((p, i) => {
+      const cx = PX - 54 + i * 108, cy = 60;
+      this.add.rectangle(cx, cy, 96, 84, 0x2a2438).setStrokeStyle(4, p.color).setDepth(31);
+      this.add.image(cx, cy - 10, p.icon).setDisplaySize(46, 46).setDepth(32);
+      label(cx, cy + 26, `$${ORDER_PAY}`, '16px', '#ffffff');
+    });
+
+    // Note card: time left
+    this.add.image(PX, 166, 'ui-note').setDisplaySize(136, 130).setDepth(31);
+    label(PX - 4, 160, 'TIME LEFT', '14px');
+    this.timeText = label(PX - 4, 190, '', '32px');
+
+    // Tips jar: fills up toward the cash target
+    this.add.image(PX, 340, 'ui-jar').setDisplaySize(141, 200).setDepth(31);
+    this.jarItems = [];
+    label(PX, 354, `GOAL\n$${CASH_TARGET}`, '17px').setDepth(34);
+
+    // Cash
+    this.add.rectangle(PX, 464, 150, 40, 0x14121c, 0.85).setStrokeStyle(3, 0x000000).setDepth(31);
+    this.cashText = label(PX, 464, '', '24px', '#c5ff9e');
+
+    // Stars, stacked like the original
+    this.starIcons = Array.from({ length: START_STARS }, (_, i) =>
+      this.add.image(PX, 508 + i * 31, 'star-full').setDisplaySize(31, 30).setDepth(32));
+
+    // Pause button
+    const btn = this.add.image(PX, 684, 'ui-button').setDisplaySize(150, 57).setDepth(31)
+      .setInteractive({ useHandCursor: true });
+    this.pauseText = label(PX, 683, 'PAUSE', '20px', '#ffffff');
+    this.pauseText.setStroke('#3b2a1a', 5);
+    btn.on('pointerdown', () => this.togglePause());
+
+    this.updateHud();
+  }
+
+  updateHud() {
+    this.cashText.setText(`$${this.cash}`);
+    const s = Math.max(0, Math.ceil(this.timeLeft / 1000));
+    this.timeText.setText(`${s}`);
+    this.timeText.setColor(s <= RUSH_SECONDS ? '#d84315' : '#3b2a1a');
+    this.starIcons.forEach((img, i) => img.setTexture(i < this.stars ? 'star-full' : 'star-empty'));
+
+    // Bills and coins pile up in the jar as cash comes in.
+    const frac = Phaser.Math.Clamp(this.cash / CASH_TARGET, 0, 1);
+    const want = Math.floor(frac * JAR_ITEMS);
+    while (this.jarItems.length < want) this.addJarItem();
+  }
+
+  // Simple bill and coin pictures drawn in code. Real art can replace them:
+  // add assets/jar-bill.png and jar-coin.png and load them under these keys.
+  makeJarTextures() {
+    if (!this.textures.exists('jar-coin')) {
+      const g = this.make.graphics({ add: false });
+      g.fillStyle(0x3b2a1a).fillCircle(12, 12, 12);
+      g.fillStyle(0xf2b827).fillCircle(12, 12, 10);
+      g.fillStyle(0xffe27a).fillCircle(10, 10, 6);
+      g.generateTexture('jar-coin', 24, 24);
+      g.destroy();
+    }
+    if (!this.textures.exists('jar-bill')) {
+      const g = this.make.graphics({ add: false });
+      g.fillStyle(0x1f3d14).fillRoundedRect(0, 0, 36, 20, 4);
+      g.fillStyle(0x6abf45).fillRoundedRect(2, 2, 32, 16, 3);
+      g.fillStyle(0x3f8a2a).fillCircle(18, 10, 5);
+      g.fillStyle(0x3f8a2a).fillRect(5, 5, 4, 10).fillRect(27, 5, 4, 10);
+      g.generateTexture('jar-bill', 36, 20);
+      g.destroy();
+    }
+  }
+
+  addJarItem() {
+    const n = this.jarItems.length;
+    const top = 296, bottom = 424;
+    const y = bottom - (n / JAR_ITEMS) * (bottom - top) - Phaser.Math.Between(0, 6);
+    const isBill = Math.random() < 0.55;
+    const x = PX + Phaser.Math.Between(isBill ? -42 : -50, isBill ? 42 : 50);
+    const item = this.add.image(x, 270, isBill ? 'jar-bill' : 'jar-coin')
+      .setDepth(32).setAngle(Phaser.Math.Between(-35, 35));
+    if (isBill) item.setDisplaySize(42, 28); else item.setDisplaySize(26, 26);
+    this.jarItems.push(item);
+    this.tweens.add({ targets: item, y, duration: 350, ease: 'Bounce.Out' });
+  }
+
+  togglePause() {
+    if (this.over) return;
+    this.paused = !this.paused;
+    this.time.paused = this.paused;
+    if (this.paused) {
+      this.tweens.pauseAll();
+      this.select(null);
+      this.pauseCover = this.add.rectangle(MAP / 2, H / 2, MAP, H, 0x000000, 0.6)
+        .setDepth(45).setInteractive();
+      this.pauseCover.on('pointerdown', () => this.togglePause());
+      this.pauseLabel = this.add.text(MAP / 2, H / 2, 'PAUSED\nclick to resume', {
+        fontFamily: 'Arial Black, Arial', fontSize: '40px', color: '#ffffff', align: 'center',
+      }).setOrigin(0.5).setDepth(46);
+      this.pauseText.setText('RESUME');
+    } else {
+      this.tweens.resumeAll();
+      this.pauseCover.destroy();
+      this.pauseLabel.destroy();
+      this.pauseText.setText('PAUSE');
+    }
+  }
+
+  // ---------- Orders ----------
+  spawnOrder() {
+    const free = this.houses.filter(h => !h.order);
+    if (free.length === 0) return;
+    const house = Phaser.Utils.Array.GetRandom(free);
+    const product = Phaser.Utils.Array.GetRandom(PRODUCTS);
+    const bx = house.bx, by = house.by;
+
+    // Customer's face in a circle (the part you click or drag), with a small
+    // badge on the corner showing what they want.
+    const customer = Phaser.Utils.Array.GetRandom(CUSTOMERS);
+    const bubble = this.add.circle(bx, by, 35, 0x14121c, 0.9)
+      .setStrokeStyle(3, product.color)
+      .setDepth(6)
+      .setInteractive({ useHandCursor: true });
+    const face = this.add.image(bx, by, customer).setDisplaySize(65, 65).setDepth(7);
+    const badge = this.add.circle(bx + 29, by + 26, 21, 0x14121c, 0.95)
+      .setStrokeStyle(3, product.color).setDepth(8);
+    const icon = this.add.image(bx + 29, by + 26, product.icon).setDisplaySize(34, 34).setDepth(9);
+
+    const order = { house, product, customer, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
+    house.order = order;
+    this.orders.push(order);
+    // Click to pick up (on release, so a drag doesn't count as a click),
+    // or drag it onto a shop.
+    bubble.orderRef = order;
+    this.input.setDraggable(bubble);
+    bubble.on('pointerup', () => {
+      if (this.justDragged) return;
+      this.toggleSelect(order);
+    });
+
+    // Pop-in animation
+    order.parts.forEach(part => {
+      const full = part.scale;
+      part.setScale(0);
+      this.tweens.add({ targets: part, scale: full, duration: 180, ease: 'Back.Out' });
+    });
+  }
+
+  // Click a bubble to pick it up. Click more bubbles of the same product to
+  // carry several (up to MAX_CARRY). Clicking a different product starts over;
+  // clicking a picked-up bubble again puts it back.
+  toggleSelect(order) {
+    if (this.over) return;
+    if (this.selected.includes(order)) {
+      this.unmark(order);
+      this.selected = this.selected.filter(o => o !== order);
+      return;
+    }
+    if (this.selected.length && this.selected[0].product !== order.product) this.select(null);
+    if (this.selected.length >= MAX_CARRY) {
+      this.floatText(order.x, order.y - 30, `Max ${MAX_CARRY}!`, '#ffffff');
+      return;
+    }
+    this.selected.push(order);
+    order.bubble.setStrokeStyle(5, 0xffffff);
+    this.tweens.add({ targets: order.bubble, scale: { from: 1.25, to: 1 }, duration: 150 });
+  }
+
+  // ---------- Dragging ----------
+  setupDragging() {
+    this.input.dragDistanceThreshold = 8;   // a tiny wobble still counts as a click
+
+    this.input.on('dragstart', (pointer, obj) => {
+      const order = obj.orderRef;
+      if (this.over || this.paused || !order) return;
+      // The dragged order joins the carried batch (or starts a new one).
+      if (!this.selected.includes(order)) this.toggleSelect(order);
+      if (!this.selected.includes(order)) return;   // batch full
+
+      // A copy of the icon follows the pointer, with a count when carrying several.
+      const ghost = this.add.container(pointer.worldX, pointer.worldY).setDepth(50);
+      ghost.add(this.add.circle(0, 0, 34, 0x14121c, 0.85).setStrokeStyle(4, 0xffffff));
+      ghost.add(this.add.image(0, 0, order.product.icon).setDisplaySize(52, 52));
+      if (this.selected.length > 1) {
+        ghost.add(this.add.text(26, -31, `x${this.selected.length}`, {
+          fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', fontStyle: 'bold',
+          stroke: '#000000', strokeThickness: 4,
+        }).setOrigin(0.5));
+      }
+      this.dragGhost = ghost;
+    });
+
+    this.input.on('drag', (pointer) => {
+      if (!this.dragGhost) return;
+      this.dragGhost.setPosition(pointer.worldX, pointer.worldY);
+      this.dispensaries.forEach(d =>
+        d.glow.setVisible(d.box.getBounds().contains(pointer.worldX, pointer.worldY)));
+    });
+
+    this.input.on('dragend', (pointer) => {
+      this.justDragged = true;
+      this.time.delayedCall(50, () => { this.justDragged = false; });
+      if (!this.dragGhost) return;
+      this.dragGhost.destroy();
+      this.dragGhost = null;
+      this.dispensaries.forEach(d => d.glow.setVisible(false));
+      const target = this.dispensaries.find(d =>
+        d.box.getBounds().contains(pointer.worldX, pointer.worldY));
+      if (target) this.onDispensaryClick(target);
+      // Dropped anywhere else: the orders stay picked up.
+    });
+  }
+
+  // select(null) drops everything currently picked up.
+  select(order) {
+    this.selected.forEach(o => this.unmark(o));
+    this.selected = [];
+    if (order && !this.over) this.toggleSelect(order);
+  }
+
+  unmark(order) {
+    if (order.bubble.active) order.bubble.setStrokeStyle(3, order.product.color);
+  }
+
+  removeOrder(order) {
+    this.selected = this.selected.filter(o => o !== order);
+    order.house.order = null;
+    order.parts.forEach(part => { this.tweens.killTweensOf(part); part.destroy(); });
+    this.orders = this.orders.filter(o => o !== order);
+  }
+
+  onDispensaryClick(disp) {
+    if (this.over || this.selected.length === 0) return;
+    const batch = [...this.selected];
+    this.select(null);
+    if (batch[0].product.key === disp.product) {
+      batch.forEach((order, i) => this.deliver(order, disp, i));
+    } else {
+      // Every order sent to the wrong shop is a miss.
+      for (const order of batch) {
+        this.fail(order, 'Wrong shop!');
+        if (this.over) break;
+      }
+    }
+  }
+
+  deliver(order, disp, i = 0) {
+    const { house } = order;
+    this.removeOrder(order);
+    this.cash += ORDER_PAY;
+    this.floatText(house.bx, house.by - 30, `+$${ORDER_PAY}`, '#c5ff9e');
+    this.advanceCombo(disp);
+    this.updateHud();
+
+    // Courier rides from the dispensary along the roads to the house, then drops a tip.
+    const path = this.roadPath(disp.x, disp.y, house.x, house.y);
+    const courier = this.add.image(disp.x, disp.y, 'courier').setDisplaySize(58, 58).setDepth(8);
+    const ride = { t: 0 };
+    this.tweens.add({
+      targets: ride, t: 1,
+      duration: path.getLength() / COURIER_SPEED,
+      delay: i * 250,
+      onUpdate: () => {
+        const p = path.getPoint(ride.t);
+        if (Math.abs(p.x - courier.x) > 0.5) courier.setFlipX(p.x < courier.x);  // face travel direction
+        courier.setPosition(p.x, p.y);
+      },
+      onComplete: () => {
+        this.dropTip(house);
+        this.tweens.add({ targets: courier, alpha: 0, duration: 250, onComplete: () => courier.destroy() });
+      },
+    });
+  }
+
+  // Route from a door down to the road below it, along to the best cross street,
+  // over to the destination's road, then up to its door.
+  roadPath(x1, y1, x2, y2) {
+    const roadBelow = y => ROAD_Y.find(r => r > y) ?? ROAD_Y[ROAD_Y.length - 1];
+    const ry1 = roadBelow(y1), ry2 = roadBelow(y2);
+    const pts = [[x1, y1], [x1, ry1]];
+    if (ry1 !== ry2) {
+      const vx = ROAD_X.reduce((best, x) =>
+        Math.abs(x1 - x) + Math.abs(x - x2) < Math.abs(x1 - best) + Math.abs(best - x2) ? x : best);
+      pts.push([vx, ry1], [vx, ry2]);
+    }
+    pts.push([x2, ry2], [x2, y2]);
+    const path = new Phaser.Curves.Path(x1, y1);
+    let [px, py] = pts[0];
+    for (const [x, y] of pts.slice(1)) {
+      if (x !== px || y !== py) path.lineTo(x, y);   // skip zero-length legs
+      [px, py] = [x, y];
+    }
+    return path;
+  }
+
+  dropTip(house) {
+    if (this.over) return;
+    const amount = Phaser.Math.Between(TIP_MIN, TIP_MAX);
+    const tip = this.add.image(house.x + 26, house.y, 'tip').setDisplaySize(40, 40)
+      .setDepth(9).setInteractive({ useHandCursor: true });
+    this.tweens.add({ targets: tip, y: tip.y - 6, yoyo: true, repeat: -1, duration: 300 });
+
+    const expire = this.time.delayedCall(TIP_LIFETIME_MS, () => {
+      this.tweens.killTweensOf(tip);
+      this.tweens.add({ targets: tip, alpha: 0, duration: 200, onComplete: () => tip.destroy() });
+    });
+    tip.on('pointerdown', () => {
+      if (this.over) return;
+      expire.remove();
+      this.tweens.killTweensOf(tip);
+      tip.destroy();
+      this.floatText(house.x + 26, house.y - 24, `tip +$${amount}`, '#ffe082');
+      // The tip flies over to the jar, then counts.
+      const coin = this.add.image(house.x + 26, house.y, 'jar-coin').setDepth(40).setDisplaySize(36, 36);
+      this.tweens.add({
+        targets: coin, x: PX, y: 262, scale: coin.scale * 0.7, duration: 500, ease: 'Quad.In',
+        onComplete: () => { coin.destroy(); this.cash += amount; this.updateHud(); },
+      });
+    });
+  }
+
+  // ---------- Combo letters ----------
+  advanceCombo(disp) {
+    if (this.comboProduct === disp.product) {
+      this.comboCount += 1;
+    } else {
+      this.resetCombo();
+      this.comboProduct = disp.product;
+      this.comboCount = 1;
+    }
+    this.lightLetters(disp);
+
+    if (this.comboCount >= COMBO_WORD.length) {
+      this.cash += FRENZY_BONUS;
+      this.showFrenzy(disp);
+      this.comboProduct = null;
+      this.comboCount = 0;
+      this.time.delayedCall(700, () => { if (!this.over) this.lightLetters(disp, 0); });
+    }
+  }
+
+  lightLetters(disp, count = this.comboCount) {
+    disp.letters.forEach((t, i) => {
+      const lit = i < count;
+      t.setTexture(`letter-${i}-${lit ? 'on' : 'off'}`);
+      if (lit && i === count - 1) {
+        this.tweens.add({ targets: t, scale: { from: t.baseScale * 1.6, to: t.baseScale }, duration: 250, ease: 'Back.Out' });
+      }
+    });
+  }
+
+  resetCombo() {
+    const disp = this.dispensaries.find(d => d.product === this.comboProduct);
+    if (disp) this.lightLetters(disp, 0);
+    this.comboProduct = null;
+    this.comboCount = 0;
+  }
+
+  showFrenzy(disp) {
+    this.cameras.main.flash(200, 255, 255, 255);
+    const t = this.add.text(MAP / 2, H / 2, `${FRENZY_TEXT}\n+$${FRENZY_BONUS}`, {
+      fontFamily: 'Arial Black, Arial', fontSize: '68px', color: '#ffffff', align: 'center',
+      stroke: '#' + disp.color.toString(16).padStart(6, '0'), strokeThickness: 13,
+    }).setOrigin(0.5).setDepth(35).setScale(0);
+    this.tweens.add({
+      targets: t, scale: 1, duration: 300, ease: 'Back.Out',
+      onComplete: () => this.tweens.add({
+        targets: t, alpha: 0, y: H / 2 - 40, delay: 700, duration: 400, onComplete: () => t.destroy(),
+      }),
+    });
+  }
+
+  fail(order, label) {
+    const { house } = order;
+    this.removeOrder(order);
+    this.resetCombo();
+    this.stars -= 1;
+    this.floatText(house.bx, house.by - 30, label, '#ff6b6b');
+    this.cameras.main.shake(150, 0.004);
+    this.updateHud();
+    if (this.stars <= 0) this.endGame(false);
+  }
+
+  // ---------- Loop ----------
+  update(time, delta) {
+    // If every carried order timed out mid-drag, drop the floating icon.
+    if (this.dragGhost && (this.over || this.selected.length === 0)) {
+      this.dragGhost.destroy();
+      this.dragGhost = null;
+      this.dispensaries.forEach(d => d.glow.setVisible(false));
+    }
+    if (this.over || this.paused) return;
+
+    this.timeLeft -= delta;
+    if (this.timeLeft <= 0) {
+      this.timeLeft = 0;
+      this.updateHud();
+      this.endGame(this.cash >= CASH_TARGET);
+      return;
+    }
+
+    // Spawning gets faster over the level, and doubles in rush hour.
+    this.nextSpawn -= delta;
+    if (this.nextSpawn <= 0) {
+      this.spawnOrder();
+      const progress = 1 - this.timeLeft / (LEVEL_SECONDS * 1000);
+      let gap = Phaser.Math.Linear(SPAWN_START_MS, SPAWN_END_MS, progress);
+      if (this.timeLeft <= RUSH_SECONDS * 1000) gap /= 2;
+      this.nextSpawn = gap * Phaser.Math.FloatBetween(0.8, 1.2);
+    }
+
+    // Patience rings drain; an empty ring means the customer leaves.
+    this.ringGfx.clear();
+    for (const order of [...this.orders]) {
+      order.waited += delta;
+      const left = 1 - order.waited / PATIENCE_MS;
+      if (left <= 0) { this.fail(order, 'Too slow!'); if (this.over) return; continue; }
+      const color = left > 0.5 ? 0x8bc34a : left > 0.25 ? 0xffc107 : 0xf44336;
+      const start = Phaser.Math.DegToRad(-90);
+      this.ringGfx.lineStyle(6, color);
+      this.ringGfx.beginPath();
+      this.ringGfx.arc(order.x, order.y, 42, start, start + Math.PI * 2 * left, false);
+      this.ringGfx.strokePath();
+    }
+
+    this.updateHud();
+  }
+
+  // ---------- Helpers ----------
+  floatText(x, y, msg, color) {
+    const t = this.add.text(x, y, msg, {
+      fontFamily: 'Arial', fontSize: '18px', color, fontStyle: 'bold',
+      stroke: '#000000', strokeThickness: 4,
+    }).setOrigin(0.5).setDepth(20);
+    this.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 900, onComplete: () => t.destroy() });
+  }
+
+  showBanner(msg, ms) {
+    const t = this.add.text(MAP / 2, 488, msg, {
+      fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', align: 'center',
+      backgroundColor: '#000000aa', padding: { x: 12, y: 8 },
+    }).setOrigin(0.5).setDepth(30);
+    this.time.delayedCall(ms, () => this.tweens.add({ targets: t, alpha: 0, duration: 400, onComplete: () => t.destroy() }));
+  }
+
+  endGame(won) {
+    if (this.over) return;
+    this.over = true;
+    this.ringGfx.clear();
+    this.select(null);
+
+    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.65).setDepth(40);
+    const title = won ? 'Level complete!' : (this.stars <= 0 ? 'Out of stars!' : 'Missed the target');
+    this.add.text(W / 2, H / 2 - 50, title, {
+      fontFamily: 'Arial', fontSize: '44px', color: won ? '#c5ff9e' : '#ff8a80', fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(41);
+    this.add.text(W / 2, H / 2 + 10, `Cash: $${this.cash}  (target $${CASH_TARGET})`, {
+      fontFamily: 'Arial', fontSize: '24px', color: '#ffffff',
+    }).setOrigin(0.5).setDepth(41);
+    this.add.text(W / 2, H / 2 + 60, 'Click to play again', {
+      fontFamily: 'Arial', fontSize: '20px', color: '#bbbbbb',
+    }).setOrigin(0.5).setDepth(41);
+
+    this.time.delayedCall(600, () => this.input.once('pointerdown', () => this.scene.restart()));
+  }
+}
+
+new Phaser.Game({
+  // Canvas renderer + plain <img> loading lets the game run from a
+  // double-clicked index.html (browsers block WebGL images from local files).
+  type: Phaser.CANVAS,
+  loader: { imageLoadType: 'HTMLImageElement' },
+  parent: 'game',
+  // Drawn at double resolution (camera zoom 2) so art and text stay sharp
+  // when the browser scales the game up. Game coordinates are still 960 x 720.
+  width: W * RES,
+  height: H * RES,
+  backgroundColor: '#14121c',
+  scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+  scene: [GameScene],
+});
