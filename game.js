@@ -80,10 +80,11 @@ const SOUNDS = {
   music: null,     // background loop
   pop: 'assets/sounds/pop.mp3',       // a customer appears
   pickup: 'assets/sounds/pickup.mp3',    // you pick up an order
-  deliver: null,   // order sent to the right shop
+  deliver: 'assets/sounds/deliver.mp3',   // order sent to the right shop
   tip: 'assets/sounds/tip.mp3',       // tip collected
   letter: null,    // a BLAZE letter lights
-  frenzy: 'assets/sounds/frenzy.mp3',    // WEED FRENZY!
+  frenzy: 'assets/sounds/frenzy.mp3',
+  robber: 'assets/sounds/robber.mp3',   // the robber shows up    // WEED FRENZY!
   miss: null,      // too slow / wrong shop
   gameover: null,  // level over
 };          // bills and coins in a full jar
@@ -482,7 +483,7 @@ class GameScene extends Phaser.Scene {
     const order = { house, product, customer, robber, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
     house.order = order;
     this.orders.push(order);
-    sfx(this, 'pop', { volume: 0.5 });
+    if (robber) sfx(this, 'robber'); else sfx(this, 'pop', { volume: 0.5 });
     // Click to pick up (on release, so a drag doesn't count as a click),
     // or drag it onto a shop.
     bubble.orderRef = order;
