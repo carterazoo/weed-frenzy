@@ -119,16 +119,16 @@ const MAPS = {
     roadX: [67, 318, 401, 652],
     roadY: [69, 208, 346, 487, 694],
   },
-  tall: {     // assets/map-suburbs-tall.jpg, 720 x 1080, 16 houses
+  tall: {     // assets/map-suburbs-tall.jpg, 720 x 1080, 12 big houses
     shops: [
-      { product: 'flower',  name: 'Green Leaf', x: 200, y: 897, w: 200, h: 186, door: [205, 980], lx: 200, ly: 1053 },
-      { product: 'gummies', name: 'Sugar High', x: 515, y: 897, w: 206, h: 186, door: [520, 980], lx: 515, ly: 1053 },
+      { product: 'flower',  name: 'Green Leaf', x: 175, y: 870, w: 260, h: 240, door: [178, 985], lx: 175, ly: 1058 },
+      { product: 'gummies', name: 'Sugar High', x: 540, y: 870, w: 265, h: 240, door: [540, 985], lx: 540, ly: 1058 },
     ],
-    houseX: [148, 252, 468, 572],
-    bubbleX: [128, 272, 448, 592],   // nudged apart so the bigger phone faces don't overlap
-    rows: [{ door: 206, bubble: 92 }, { door: 381, bubble: 267 }, { door: 556, bubble: 442 }, { door: 729, bubble: 615 }],
-    roadX: [62, 322, 398, 655],
-    roadY: [70, 255, 430, 605, 778, 1022],
+    houseX: [112, 246, 478, 612],
+    bubbleX: [96, 264, 460, 628],   // nudged apart so the big phone faces don't overlap
+    rows: [{ door: 200, bubble: 88 }, { door: 438, bubble: 326 }, { door: 674, bubble: 563 }],
+    roadX: [15, 324, 395, 705],
+    roadY: [15, 262, 498, 733, 1020],
   },
 };
 const M = PORTRAIT ? MAPS.tall : MAPS.square;
@@ -142,7 +142,9 @@ const HOUSES = HOUSE_ROWS.flatMap(r => HOUSE_X.map((x, i) =>
   ({ door: [x, r.door], bubble: [M.bubbleX ? M.bubbleX[i] : x, r.bubble] })));
 
 // Size of customer faces, badges and rings (bigger on phones).
-const FACE_K = PORTRAIT ? 1.4 : 1;
+const FACE_K = PORTRAIT ? 1.75 : 1;
+// Size of the courier, tips, combo letters and pop-up text (bigger on phones).
+const UI_K = PORTRAIT ? 1.35 : 1;
 
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
 
@@ -283,11 +285,11 @@ class GameScene extends Phaser.Scene {
 
     // Combo letters on a dark pill, dim until lit.
     // (Letter images: assets/letter-<n>-off.png / -on.png, drawn for BLAZE.)
-    this.add.rectangle(d.lx, d.ly, COMBO_WORD.length * 31 + 14, 40, 0x14121c, 0.6).setDepth(3);
+    this.add.rectangle(d.lx, d.ly, (COMBO_WORD.length * 31 + 14) * UI_K, 40 * UI_K, 0x14121c, 0.6).setDepth(3);
     const letters = COMBO_WORD.split('').map((ch, i) => {
-      const img = this.add.image(d.lx + (i - (COMBO_WORD.length - 1) / 2) * 31, d.ly, `letter-${i}-off`)
+      const img = this.add.image(d.lx + (i - (COMBO_WORD.length - 1) / 2) * 31 * UI_K, d.ly, `letter-${i}-off`)
         .setDepth(4);
-      img.setScale(34 / img.height);
+      img.setScale(34 * UI_K / img.height);
       img.baseScale = img.scale;
       return img;
     });
@@ -618,7 +620,7 @@ class GameScene extends Phaser.Scene {
 
     // Courier rides from the dispensary along the roads to the house, then drops a tip.
     const path = this.roadPath(disp.x, disp.y, house.x, house.y);
-    const courier = this.add.image(disp.x, disp.y, 'courier').setDisplaySize(58, 58).setDepth(8);
+    const courier = this.add.image(disp.x, disp.y, 'courier').setDisplaySize(58 * UI_K, 58 * UI_K).setDepth(8);
     const ride = { t: 0 };
     this.tweens.add({
       targets: ride, t: 1,
@@ -660,7 +662,7 @@ class GameScene extends Phaser.Scene {
   dropTip(house) {
     if (this.over) return;
     const amount = Phaser.Math.Between(TIP_MIN, TIP_MAX);
-    const tip = this.add.image(house.x + 28, house.y, 'tip').setDisplaySize(56, 56).setDepth(9);
+    const tip = this.add.image(house.x + 28 * UI_K, house.y, 'tip').setDisplaySize(56 * UI_K, 56 * UI_K).setDepth(9);
     tip.setInteractive({ hitArea: new Phaser.Geom.Circle(tip.width / 2, tip.height / 2, tip.width * 0.75), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
     this.tweens.add({ targets: tip, y: tip.y - 6, yoyo: true, repeat: -1, duration: 300 });
 
@@ -804,7 +806,7 @@ class GameScene extends Phaser.Scene {
   // ---------- Helpers ----------
   floatText(x, y, msg, color) {
     const t = this.add.text(x, y, msg, {
-      fontFamily: 'Arial', fontSize: '18px', color, fontStyle: 'bold',
+      fontFamily: 'Arial', fontSize: `${Math.round(18 * UI_K)}px`, color, fontStyle: 'bold',
       stroke: '#000000', strokeThickness: 4,
     }).setOrigin(0.5).setDepth(20);
     this.tweens.add({ targets: t, y: y - 40, alpha: 0, duration: 900, onComplete: () => t.destroy() });
