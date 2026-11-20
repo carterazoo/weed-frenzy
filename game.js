@@ -2,8 +2,11 @@
 // One map, 2 dispensaries, orders with patience rings, 5 stars, tips, level timer,
 // BLAZE combo letters. Art lives in the assets folder.
 
-const W = 960;
-const H = 720;
+// Phones held upright get a portrait layout (map on top, panel below);
+// everything else gets the landscape layout (panel on the right).
+const PORTRAIT = window.innerHeight > window.innerWidth;
+const W = PORTRAIT ? 720 : 960;
+const H = PORTRAIT ? 1280 : 720;
 const RES = 2;            // render scale for sharpness
 
 // Every text object renders at the same double resolution.
@@ -12,7 +15,32 @@ Phaser.GameObjects.GameObjectFactory.prototype.text = function (x, y, text, styl
   return _addText.call(this, x, y, text, { resolution: RES, ...style });
 };
 const MAP = 720;          // map is a 720 x 720 square on the left
-const PX = 840;           // center x of the side panel (720..960)
+
+// Where the panel pieces go in each layout (game coordinates).
+const HUD = PORTRAIT ? {
+  panel: { key: 'ui-panel-wide', x: 360, y: 1003, w: 704, h: 530 }, bg: [360, 1000, 720, 560],
+  cards: [[575, 845], [575, 980]], cardK: 1.4,
+  note: { x: 150, y: 850, w: 190, h: 182, k: 1.4 },
+  jar: { x: 360, y: 965, w: 197, h: 280 },
+  cash: { x: 150, y: 990, w: 200, h: 56, k: 1.4 },
+  stars: Array.from({ length: 5 }, (_, i) => [150 + (i - 2) * 42, 1070]), starSize: 40,
+  pause: { x: 360, y: 1195, w: 300, h: 80, k: 1.5 },
+} : {
+  panel: { key: 'ui-panel', x: 840, y: 360, w: 236, h: 714 }, bg: [840, 360, 240, 720],
+  cards: [[786, 60], [894, 60]], cardK: 1,
+  note: { x: 840, y: 166, w: 136, h: 130, k: 1 },
+  jar: { x: 840, y: 340, w: 141, h: 200 },
+  cash: { x: 840, y: 464, w: 150, h: 40, k: 1 },
+  stars: Array.from({ length: 5 }, (_, i) => [840, 508 + i * 31]), starSize: 31,
+  pause: { x: 840, y: 684, w: 150, h: 57, k: 1 },
+};
+const TAP = ('ontouchstart' in window) ? 'tap' : 'click';
+const JK = HUD.jar.h / 200;   // jar scale relative to the original 200 px jar
+
+// Turning the phone switches layouts, which needs a reload.
+window.addEventListener('resize', () => {
+  if ((window.innerHeight > window.innerWidth) !== PORTRAIT) location.reload();
+});
 
 // ---- Tuning knobs (change these to adjust difficulty) ----
 const LEVEL_SECONDS = 90;      // level length
@@ -103,7 +131,7 @@ class TitleScene extends Phaser.Scene {
       this.load.image(`letter-${i}-on`, `assets/letter-${i}-on.png`);
     }
     [...CUSTOMERS, 'cust-narc'].forEach(k => this.load.image(k, `assets/${k}.png`));
-    ['ui-panel', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
+    ['ui-panel', 'ui-panel-wide', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
       .forEach(k => this.load.image(k, `assets/${k}.png`));
     if (LOGO_FILE) this.load.image('logo', LOGO_FILE);
     Object.entries(SOUNDS).forEach(([k, file]) => { if (file) this.load.audio(k, file); });
@@ -115,14 +143,15 @@ class TitleScene extends Phaser.Scene {
     // Dimmed map behind everything
     this.add.image(W / 2, H / 2, 'map').setDisplaySize(H, H);
     this.add.rectangle(W / 2, H / 2, W, H, 0x0c0a12, 0.6);
+    const OY = (H - 720) / 2;   // centers the layout on tall phone screens
 
     // Logo: the real image once assets/logo.png exists, a text stand-in until then
     if (this.textures.exists('logo')) {
-      const logo = this.add.image(W / 2, 124, 'logo');
+      const logo = this.add.image(W / 2, OY + 124, 'logo');
       logo.setScale(Math.min(560 / logo.width, 226 / logo.height));
       this.tweens.add({ targets: logo, scale: logo.scale * 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.InOut' });
     } else {
-      this.add.text(W / 2, 130, 'WEED FRENZY', {
+      this.add.text(W / 2, OY + 130, 'WEED FRENZY', {
         fontFamily: 'Arial Black, Arial', fontSize: '76px', color: '#8ee34a',
         stroke: '#1b3a0e', strokeThickness: 14,
       }).setOrigin(0.5);
@@ -130,25 +159,25 @@ class TitleScene extends Phaser.Scene {
 
     // How to play
     const box = this.add.graphics();
-    box.fillStyle(0x14121c, 0.88).fillRoundedRect(W / 2 - 300, 250, 600, 330, 22);
-    box.lineStyle(4, 0x8ee34a).strokeRoundedRect(W / 2 - 300, 250, 600, 330, 22);
-    this.add.text(W / 2, 282, 'HOW TO PLAY', {
+    box.fillStyle(0x14121c, 0.88).fillRoundedRect(W / 2 - 300, OY + 250, 600, 330, 22);
+    box.lineStyle(4, 0x8ee34a).strokeRoundedRect(W / 2 - 300, OY + 250, 600, 330, 22);
+    this.add.text(W / 2, OY + 282, 'HOW TO PLAY', {
       fontFamily: 'Arial Black, Arial', fontSize: '26px', color: '#ffd54f',
     }).setOrigin(0.5);
     const steps = [
       'Customers pop up wanting Flower or Gummies.',
-      'Click or drag them to the shop that sells it.',
+      `${TAP === 'tap' ? 'Tap' : 'Click'} or drag them to the shop that sells it.`,
       'Grab up to 3 of the same item and send them at once.',
       'Same item in a row lights up B-L-A-Z-E. Fill it for a WEED FRENZY bonus!',
-      'Click the cash tips before they disappear.',
+      `${TAP === 'tap' ? 'Tap' : 'Click'} the cash tips before they disappear.`,
       `Too slow or wrong shop costs a star. Make $${CASH_TARGET} before time runs out.`,
     ];
-    this.add.text(W / 2 - 270, 314, steps.map((t, i) => `${i + 1}.  ${t}`).join('\n'), {
+    this.add.text(W / 2 - 270, OY + 314, steps.map((t, i) => `${i + 1}.  ${t}`).join('\n'), {
       fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', lineSpacing: 10,
       wordWrap: { width: 540 },
     });
 
-    const start = this.add.text(W / 2, 640, 'CLICK TO START', {
+    const start = this.add.text(W / 2, OY + 640, `${TAP.toUpperCase()} TO START`, {
       fontFamily: 'Arial Black, Arial', fontSize: '34px', color: '#ffffff',
       stroke: '#1b3a0e', strokeThickness: 8,
     }).setOrigin(0.5);
@@ -242,40 +271,47 @@ class GameScene extends Phaser.Scene {
       fontFamily: 'Arial Black, Arial', fontSize: size, color, align: 'center', fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(32);
 
-    // Wooden side panel
-    this.add.rectangle(PX, H / 2, 240, H, 0x2b1a0e).setDepth(29);
-    this.add.image(PX, H / 2, 'ui-panel').setDisplaySize(236, 714).setDepth(30);
+    const px = n => `${Math.round(n)}px`;
+
+    // Wooden panel (side panel on computers, bottom panel on phones)
+    this.add.rectangle(...HUD.bg, 0x2b1a0e).setDepth(29);
+    this.add.image(HUD.panel.x, HUD.panel.y, HUD.panel.key).setDisplaySize(HUD.panel.w, HUD.panel.h).setDepth(30);
 
     // Product cards: icon + price per order
+    const ck = HUD.cardK;
     PRODUCTS.forEach((p, i) => {
-      const cx = PX - 54 + i * 108, cy = 60;
-      this.add.rectangle(cx, cy, 96, 84, 0x2a2438).setStrokeStyle(4, p.color).setDepth(31);
-      this.add.image(cx, cy - 10, p.icon).setDisplaySize(46, 46).setDepth(32);
-      label(cx, cy + 26, `$${ORDER_PAY}`, '16px', '#ffffff');
+      const [cx, cy] = HUD.cards[i];
+      this.add.rectangle(cx, cy, 96 * ck, 84 * ck, 0x2a2438).setStrokeStyle(4, p.color).setDepth(31);
+      this.add.image(cx, cy - 10 * ck, p.icon).setDisplaySize(46 * ck, 46 * ck).setDepth(32);
+      label(cx, cy + 26 * ck, `$${ORDER_PAY}`, px(16 * ck), '#ffffff');
     });
 
     // Note card: time left
-    this.add.image(PX, 166, 'ui-note').setDisplaySize(136, 130).setDepth(31);
-    label(PX - 4, 160, 'TIME LEFT', '14px');
-    this.timeText = label(PX - 4, 190, '', '32px');
+    const n = HUD.note;
+    this.add.image(n.x, n.y, 'ui-note').setDisplaySize(n.w, n.h).setDepth(31);
+    label(n.x - 4 * n.k, n.y - 6 * n.k, 'TIME LEFT', px(14 * n.k));
+    this.timeText = label(n.x - 4 * n.k, n.y + 24 * n.k, '', px(32 * n.k));
 
     // Tips jar: fills up toward the cash target
-    this.add.image(PX, 340, 'ui-jar').setDisplaySize(141, 200).setDepth(31);
+    const j = HUD.jar;
+    this.add.image(j.x, j.y, 'ui-jar').setDisplaySize(j.w, j.h).setDepth(31);
     this.jarItems = [];
-    label(PX, 354, `GOAL\n$${CASH_TARGET}`, '17px').setDepth(34);
+    label(j.x, j.y + 14 * JK, `GOAL\n$${CASH_TARGET}`, px(17 * JK)).setDepth(34);
 
     // Cash
-    this.add.rectangle(PX, 464, 150, 40, 0x14121c, 0.85).setStrokeStyle(3, 0x000000).setDepth(31);
-    this.cashText = label(PX, 464, '', '24px', '#c5ff9e');
+    const c = HUD.cash;
+    this.add.rectangle(c.x, c.y, c.w, c.h, 0x14121c, 0.85).setStrokeStyle(3, 0x000000).setDepth(31);
+    this.cashText = label(c.x, c.y, '', px(24 * c.k), '#c5ff9e');
 
-    // Stars, stacked like the original
-    this.starIcons = Array.from({ length: START_STARS }, (_, i) =>
-      this.add.image(PX, 508 + i * 31, 'star-full').setDisplaySize(31, 30).setDepth(32));
+    // Stars
+    this.starIcons = HUD.stars.map(([x, y]) =>
+      this.add.image(x, y, 'star-full').setDisplaySize(HUD.starSize, HUD.starSize * 0.97).setDepth(32));
 
     // Pause button
-    const btn = this.add.image(PX, 684, 'ui-button').setDisplaySize(150, 57).setDepth(31)
+    const pz = HUD.pause;
+    const btn = this.add.image(pz.x, pz.y, 'ui-button').setDisplaySize(pz.w, pz.h).setDepth(31)
       .setInteractive({ useHandCursor: true });
-    this.pauseText = label(PX, 683, 'PAUSE', '20px', '#ffffff');
+    this.pauseText = label(pz.x, pz.y - 1, 'PAUSE', px(20 * pz.k), '#ffffff');
     this.pauseText.setStroke('#3b2a1a', 5);
     btn.on('pointerdown', () => this.togglePause());
 
@@ -319,13 +355,15 @@ class GameScene extends Phaser.Scene {
 
   addJarItem() {
     const n = this.jarItems.length;
-    const top = 296, bottom = 424;
-    const y = bottom - (n / JAR_ITEMS) * (bottom - top) - Phaser.Math.Between(0, 6);
+    const j = HUD.jar;
+    const top = j.y - 44 * JK, bottom = j.y + 84 * JK;
+    const y = bottom - (n / JAR_ITEMS) * (bottom - top) - Phaser.Math.Between(0, 6) * JK;
     const isBill = Math.random() < 0.55;
-    const x = PX + Phaser.Math.Between(isBill ? -42 : -50, isBill ? 42 : 50);
-    const item = this.add.image(x, 270, isBill ? 'jar-bill' : 'jar-coin')
+    const spread = (isBill ? 42 : 50) * JK;
+    const x = j.x + Phaser.Math.FloatBetween(-spread, spread);
+    const item = this.add.image(x, j.y - 70 * JK, isBill ? 'jar-bill' : 'jar-coin')
       .setDepth(32).setAngle(Phaser.Math.Between(-35, 35));
-    if (isBill) item.setDisplaySize(42, 28); else item.setDisplaySize(26, 26);
+    if (isBill) item.setDisplaySize(42 * JK, 28 * JK); else item.setDisplaySize(26 * JK, 26 * JK);
     this.jarItems.push(item);
     this.tweens.add({ targets: item, y, duration: 350, ease: 'Bounce.Out' });
   }
@@ -341,7 +379,7 @@ class GameScene extends Phaser.Scene {
       this.pauseCover = this.add.rectangle(MAP / 2, H / 2, MAP, H, 0x000000, 0.6)
         .setDepth(45).setInteractive();
       this.pauseCover.on('pointerdown', () => this.togglePause());
-      this.pauseLabel = this.add.text(MAP / 2, H / 2, 'PAUSED\nclick to resume', {
+      this.pauseLabel = this.add.text(MAP / 2, MAP / 2, `PAUSED\n${TAP} to resume`, {
         fontFamily: 'Arial Black, Arial', fontSize: '40px', color: '#ffffff', align: 'center',
       }).setOrigin(0.5).setDepth(46);
       this.pauseText.setText('RESUME');
@@ -368,7 +406,8 @@ class GameScene extends Phaser.Scene {
     const bubble = this.add.circle(bx, by, 35, 0x14121c, 0.9)
       .setStrokeStyle(3, product.color)
       .setDepth(6)
-      .setInteractive({ useHandCursor: true });
+      // Tap zone is wider than the picture so near misses still count.
+      .setInteractive({ hitArea: new Phaser.Geom.Circle(35, 35, 50), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
     const face = this.add.image(bx, by, customer).setDisplaySize(65, 65).setDepth(7);
     const badge = this.add.circle(bx + 29, by + 26, 21, 0x14121c, 0.95)
       .setStrokeStyle(3, product.color).setDepth(8);
@@ -547,8 +586,8 @@ class GameScene extends Phaser.Scene {
   dropTip(house) {
     if (this.over) return;
     const amount = Phaser.Math.Between(TIP_MIN, TIP_MAX);
-    const tip = this.add.image(house.x + 26, house.y, 'tip').setDisplaySize(40, 40)
-      .setDepth(9).setInteractive({ useHandCursor: true });
+    const tip = this.add.image(house.x + 28, house.y, 'tip').setDisplaySize(56, 56).setDepth(9);
+    tip.setInteractive({ hitArea: new Phaser.Geom.Circle(tip.width / 2, tip.height / 2, tip.width * 0.75), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
     this.tweens.add({ targets: tip, y: tip.y - 6, yoyo: true, repeat: -1, duration: 300 });
 
     const expire = this.time.delayedCall(TIP_LIFETIME_MS, () => {
@@ -565,7 +604,7 @@ class GameScene extends Phaser.Scene {
       // The tip flies over to the jar, then counts.
       const coin = this.add.image(house.x + 26, house.y, 'jar-coin').setDepth(40).setDisplaySize(36, 36);
       this.tweens.add({
-        targets: coin, x: PX, y: 262, scale: coin.scale * 0.7, duration: 500, ease: 'Quad.In',
+        targets: coin, x: HUD.jar.x, y: HUD.jar.y - 78 * JK, scale: coin.scale * 0.7, duration: 500, ease: 'Quad.In',
         onComplete: () => { coin.destroy(); this.cash += amount; this.updateHud(); },
       });
     });
@@ -612,14 +651,14 @@ class GameScene extends Phaser.Scene {
   showFrenzy(disp) {
     sfx(this, 'frenzy');
     this.cameras.main.flash(200, 255, 255, 255);
-    const t = this.add.text(MAP / 2, H / 2, `${FRENZY_TEXT}\n+$${FRENZY_BONUS}`, {
+    const t = this.add.text(MAP / 2, MAP / 2, `${FRENZY_TEXT}\n+$${FRENZY_BONUS}`, {
       fontFamily: 'Arial Black, Arial', fontSize: '68px', color: '#ffffff', align: 'center',
       stroke: '#' + disp.color.toString(16).padStart(6, '0'), strokeThickness: 13,
     }).setOrigin(0.5).setDepth(35).setScale(0);
     this.tweens.add({
       targets: t, scale: 1, duration: 300, ease: 'Back.Out',
       onComplete: () => this.tweens.add({
-        targets: t, alpha: 0, y: H / 2 - 40, delay: 700, duration: 400, onComplete: () => t.destroy(),
+        targets: t, alpha: 0, y: MAP / 2 - 40, delay: 700, duration: 400, onComplete: () => t.destroy(),
       }),
     });
   }
@@ -714,7 +753,7 @@ class GameScene extends Phaser.Scene {
     this.add.text(W / 2, H / 2 + 10, `Cash: $${this.cash}  (target $${CASH_TARGET})`, {
       fontFamily: 'Arial', fontSize: '24px', color: '#ffffff',
     }).setOrigin(0.5).setDepth(41);
-    this.add.text(W / 2, H / 2 + 60, 'Click to play again', {
+    this.add.text(W / 2, H / 2 + 60, `${TAP === 'tap' ? 'Tap' : 'Click'} to play again`, {
       fontFamily: 'Arial', fontSize: '20px', color: '#bbbbbb',
     }).setOrigin(0.5).setDepth(41);
 
