@@ -60,6 +60,13 @@ const COMBO_WORD = 'BLAZE';
 const FRENZY_BONUS = 50;
 const JAR_ITEMS = 34;
 
+// The robber: looks like a normal order. Serve him and he steals some of your
+// cash; ignore him and he leaves with no penalty.
+const ROBBER_CHANCE = 0.12;       // chance each new order is the robber
+const ROBBER_AFTER_SECONDS = 15;  // he doesn't show up until this far into a level
+const ROBBER_STEAL = 0.25;        // share of your cash he takes
+const ROBBER_FILE = 'assets/cust-robber.png';
+
 // Start screen logo. Set to 'assets/logo.png' once you have one.
 const LOGO_FILE = 'assets/logo.png';
 
@@ -134,6 +141,7 @@ class TitleScene extends Phaser.Scene {
     ['ui-panel', 'ui-panel-wide', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
       .forEach(k => this.load.image(k, `assets/${k}.png`));
     if (LOGO_FILE) this.load.image('logo', LOGO_FILE);
+    if (ROBBER_FILE) this.load.image('cust-robber', ROBBER_FILE);
     Object.entries(SOUNDS).forEach(([k, file]) => { if (file) this.load.audio(k, file); });
   }
 
@@ -159,8 +167,8 @@ class TitleScene extends Phaser.Scene {
 
     // How to play
     const box = this.add.graphics();
-    box.fillStyle(0x14121c, 0.88).fillRoundedRect(W / 2 - 300, OY + 250, 600, 330, 22);
-    box.lineStyle(4, 0x8ee34a).strokeRoundedRect(W / 2 - 300, OY + 250, 600, 330, 22);
+    box.fillStyle(0x14121c, 0.88).fillRoundedRect(W / 2 - 300, OY + 248, 600, 362, 22);
+    box.lineStyle(4, 0x8ee34a).strokeRoundedRect(W / 2 - 300, OY + 248, 600, 362, 22);
     this.add.text(W / 2, OY + 282, 'HOW TO PLAY', {
       fontFamily: 'Arial Black, Arial', fontSize: '26px', color: '#ffd54f',
     }).setOrigin(0.5);
@@ -170,14 +178,15 @@ class TitleScene extends Phaser.Scene {
       'Grab up to 3 of the same item and send them at once.',
       'Same item in a row lights up B-L-A-Z-E. Fill it for a WEED FRENZY bonus!',
       `${TAP === 'tap' ? 'Tap' : 'Click'} the cash tips before they disappear.`,
+      'Leave the guy in the ski mask alone. Serve him and he robs you!',
       `Too slow or wrong shop costs a star. Make $${CASH_TARGET} before time runs out.`,
     ];
     this.add.text(W / 2 - 270, OY + 314, steps.map((t, i) => `${i + 1}.  ${t}`).join('\n'), {
-      fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', lineSpacing: 10,
+      fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', lineSpacing: 8,
       wordWrap: { width: 540 },
     });
 
-    const start = this.add.text(W / 2, OY + 640, `${TAP.toUpperCase()} TO START`, {
+    const start = this.add.text(W / 2, OY + 656, `${TAP.toUpperCase()} TO START`, {
       fontFamily: 'Arial Black, Arial', fontSize: '34px', color: '#ffffff',
       stroke: '#1b3a0e', strokeThickness: 8,
     }).setOrigin(0.5);
@@ -329,11 +338,32 @@ class GameScene extends Phaser.Scene {
     const frac = Phaser.Math.Clamp(this.cash / CASH_TARGET, 0, 1);
     const want = Math.floor(frac * JAR_ITEMS);
     while (this.jarItems.length < want) this.addJarItem();
+    while (this.jarItems.length > want) {   // money taken out (robbed): it flies away
+      const item = this.jarItems.pop();
+      this.tweens.add({
+        targets: item, y: item.y - 120 * JK, x: item.x + Phaser.Math.Between(-60, 60) * JK,
+        alpha: 0, angle: item.angle + 180, duration: 600, onComplete: () => item.destroy(),
+      });
+    }
   }
 
   // Simple bill and coin pictures drawn in code. Real art can replace them:
   // add assets/jar-bill.png and jar-coin.png and load them under these keys.
   makeJarTextures() {
+    // Placeholder robber face (black ski mask) until real art is added.
+    if (!this.textures.exists('cust-robber')) {
+      const g = this.make.graphics({ add: false });
+      g.fillStyle(0xf6e7a8).fillCircle(64, 64, 64);
+      g.fillStyle(0x111111).fillCircle(64, 64, 58);
+      g.fillStyle(0x2a2a2a).fillEllipse(64, 30, 70, 26);
+      g.fillStyle(0xd9a066).fillRoundedRect(30, 46, 68, 24, 10);
+      g.fillStyle(0xffffff).fillCircle(48, 58, 8).fillCircle(80, 58, 8);
+      g.fillStyle(0x000000).fillCircle(50, 59, 4).fillCircle(82, 59, 4);
+      g.fillStyle(0xd9a066).fillEllipse(64, 92, 26, 14);
+      g.fillStyle(0x7a1f1f).fillEllipse(64, 93, 16, 7);
+      g.generateTexture('cust-robber', 128, 128);
+      g.destroy();
+    }
     if (!this.textures.exists('jar-coin')) {
       const g = this.make.graphics({ add: false });
       g.fillStyle(0x3b2a1a).fillCircle(12, 12, 12);
@@ -402,7 +432,9 @@ class GameScene extends Phaser.Scene {
 
     // Customer's face in a circle (the part you click or drag), with a small
     // badge on the corner showing what they want.
-    const customer = Phaser.Utils.Array.GetRandom(CUSTOMERS);
+    const elapsed = LEVEL_SECONDS * 1000 - this.timeLeft;
+    const robber = elapsed > ROBBER_AFTER_SECONDS * 1000 && Math.random() < ROBBER_CHANCE;
+    const customer = robber ? 'cust-robber' : Phaser.Utils.Array.GetRandom(CUSTOMERS);
     const bubble = this.add.circle(bx, by, 35, 0x14121c, 0.9)
       .setStrokeStyle(3, product.color)
       .setDepth(6)
@@ -413,7 +445,7 @@ class GameScene extends Phaser.Scene {
       .setStrokeStyle(3, product.color).setDepth(8);
     const icon = this.add.image(bx + 29, by + 26, product.icon).setDisplaySize(34, 34).setDepth(9);
 
-    const order = { house, product, customer, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
+    const order = { house, product, customer, robber, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
     house.order = order;
     this.orders.push(order);
     sfx(this, 'pop', { volume: 0.5 });
@@ -522,16 +554,32 @@ class GameScene extends Phaser.Scene {
     if (this.over || this.selected.length === 0) return;
     const batch = [...this.selected];
     this.select(null);
-    if (batch[0].product.key === disp.product) {
+    // Serving the robber from any shop gets you robbed.
+    batch.filter(o => o.robber).forEach(o => this.getRobbed(o));
+    const real = batch.filter(o => !o.robber);
+    if (real.length === 0) return;
+    if (real[0].product.key === disp.product) {
       sfx(this, 'deliver');
-      batch.forEach((order, i) => this.deliver(order, disp, i));
+      real.forEach((order, i) => this.deliver(order, disp, i));
     } else {
       // Every order sent to the wrong shop is a miss.
-      for (const order of batch) {
+      for (const order of real) {
         this.fail(order, 'Wrong shop!');
         if (this.over) break;
       }
     }
+  }
+
+  getRobbed(order) {
+    const { house } = order;
+    this.removeOrder(order);
+    const stolen = Math.ceil(this.cash * ROBBER_STEAL);
+    this.cash -= stolen;
+    this.resetCombo();
+    sfx(this, 'miss');
+    this.cameras.main.shake(250, 0.008);
+    this.floatText(house.bx, house.by - 30, stolen > 0 ? `ROBBED! -$${stolen}` : 'ROBBED!', '#ff5252');
+    this.updateHud();
   }
 
   deliver(order, disp, i = 0) {
@@ -708,7 +756,14 @@ class GameScene extends Phaser.Scene {
     for (const order of [...this.orders]) {
       order.waited += delta;
       const left = 1 - order.waited / PATIENCE_MS;
-      if (left <= 0) { this.fail(order, 'Too slow!'); if (this.over) return; continue; }
+      if (left <= 0) {
+        if (order.robber) {   // ignoring the robber is the right move: no penalty
+          this.floatText(order.x, order.y - 30, 'Dodged him!', '#c5ff9e');
+          this.removeOrder(order);
+          continue;
+        }
+        this.fail(order, 'Too slow!'); if (this.over) return; continue;
+      }
       const color = left > 0.5 ? 0x8bc34a : left > 0.25 ? 0xffc107 : 0xf44336;
       const start = Phaser.Math.DegToRad(-90);
       this.ringGfx.lineStyle(6, color);
