@@ -83,7 +83,7 @@ const SOUNDS = {
   deliver: null,   // order sent to the right shop
   tip: 'assets/sounds/tip.mp3',       // tip collected
   letter: null,    // a BLAZE letter lights
-  frenzy: null,    // WEED FRENZY!
+  frenzy: 'assets/sounds/frenzy.mp3',    // WEED FRENZY!
   miss: null,      // too slow / wrong shop
   gameover: null,  // level over
 };          // bills and coins in a full jar
