@@ -220,7 +220,13 @@ class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: start, scale: 1.08, yoyo: true, repeat: -1, duration: 600 });
 
     // The first click also unlocks sound in the browser.
-    this.input.once('pointerdown', () => this.scene.start('game'));
+    this.input.once('pointerdown', () => {
+      // Safari can leave audio asleep until it's explicitly woken on a tap.
+      const ctx = this.sound.context;
+      if (ctx && ctx.state !== 'running') ctx.resume();
+      if (this.sound.unlock) this.sound.unlock();
+      this.scene.start('game');
+    });
   }
 }
 
