@@ -34,13 +34,13 @@ window.addEventListener('resize', () => {
 const HUD = PORTRAIT ? {
   panel: { key: 'ui-panel-wide', x: 360, y: 1220, w: 712, h: 272 }, bg: [360, 1220, 720, 280],
   note: { x: 95, y: 1215, w: 140, h: 134, k: 1.03 },
-  jar: { x: 400, y: 1220, w: 141, h: 200 },
-  cash: { x: 250, y: 1185, w: 150, h: 46, k: 1.2 },
-  stars: Array.from({ length: 5 }, (_, i) => [250 + (i - 2) * 30, 1245]), starSize: 29,
+  jar: { x: 386, y: 1222, w: 124, h: 176 },
+  cash: { x: 250, y: 1185, w: 140, h: 46, k: 1.2 },
+  stars: Array.from({ length: 5 }, (_, i) => [250 + (i - 2) * 28, 1245]), starSize: 27,
   pause: { x: 644, y: 1220, w: 106, h: 72, k: 0.85 },
   pause4: { x: 664, y: 1220, w: 86, h: 72, k: 0.75 },     // narrower when 4 product cards
-  cards2: { k: 0.95, at: [[533, 1172], [533, 1268]] },
-  cards4: { k: 0.8, at: [[492, 1172], [574, 1172], [492, 1268], [574, 1268]] },
+  cards2: { k: 0.95, at: [[530, 1172], [530, 1268]] },
+  cards4: { k: 0.8, at: [[494, 1172], [576, 1172], [494, 1268], [576, 1268]] },
   stageLabel: null,
 } : {
   panel: { key: 'ui-panel-tall', x: 840, y: 540, w: 236, h: 1074 }, bg: [840, 540, 240, 1080],
@@ -105,6 +105,8 @@ const PRODUCTS = [
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
 const iconKey = p => `icon-${p.key}`;
 const STARTER_PRODUCTS = ['flower', 'gummies'];
+// What each shop sells by default (if you own it), matching its sign.
+const SHOP_DEFAULTS = { 'Green Leaf': 'flower', 'Sugar High': 'gummies', 'Kush Corner': 'prerolls', 'Higher Learning': 'vape' };
 
 // ======================================================================
 // Characters
@@ -131,8 +133,8 @@ const STAGES = [
     mapFile: 'assets/map-suburbs-tall.jpg',
     map: {
       shops: [
-        { name: 'Green Leaf', x: 175, y: 870, w: 260, h: 240, door: [178, 985], lx: 175, ly: 1058 },
-        { name: 'Sugar High', x: 540, y: 870, w: 265, h: 240, door: [540, 985], lx: 540, ly: 1058 },
+        { name: 'Green Leaf', x: 175, y: 870, w: 260, h: 240, door: [178, 985], lx: 175, ly: 1058, badge: [175, 900] },
+        { name: 'Sugar High', x: 540, y: 870, w: 265, h: 240, door: [540, 985], lx: 540, ly: 1058, badge: [540, 900] },
       ],
       houseX: [112, 246, 478, 612],
       bubbleX: [96, 264, 460, 628],
@@ -147,11 +149,10 @@ const STAGES = [
     customers: CUSTOMER_FILES,
     mapFile: 'assets/map-hood-tall.jpg',
     map: {
-      // badge = where the "what this shop sells" icon sits (over the left flower pot)
-      shops: [
-        { name: 'Green Leaf',  x: 155, y: 905, w: 200, h: 190, door: [160, 990], lx: 155, ly: 1058, badge: [64, 972] },
-        { name: 'Sugar High',  x: 357, y: 905, w: 197, h: 190, door: [357, 990], lx: 357, ly: 1058, badge: [262, 972] },
-        { name: 'Kush Corner', x: 565, y: 905, w: 200, h: 190, door: [568, 990], lx: 565, ly: 1058, badge: [462, 972] },
+            shops: [
+        { name: 'Green Leaf',  x: 155, y: 905, w: 200, h: 190, door: [160, 990], lx: 155, ly: 1058, badge: [155, 905] },
+        { name: 'Sugar High',  x: 357, y: 905, w: 197, h: 190, door: [357, 990], lx: 357, ly: 1058, badge: [357, 905] },
+        { name: 'Kush Corner', x: 565, y: 905, w: 200, h: 190, door: [568, 990], lx: 565, ly: 1058, badge: [565, 905] },
       ],
       houseX: [122, 240, 485, 600],
       bubbleX: [100, 262, 463, 622],
@@ -168,10 +169,10 @@ const STAGES = [
     mapFile: 'assets/map-college-tall.jpg',
     map: {
       shops: [
-        { name: 'Green Leaf',      x: 122, y: 905, w: 155, h: 190, door: [122, 990], lx: 122, ly: 1058, badge: [50, 972] },
-        { name: 'Sugar High',      x: 283, y: 905, w: 155, h: 190, door: [285, 990], lx: 283, ly: 1058, badge: [208, 972] },
-        { name: 'Kush Corner',     x: 442, y: 905, w: 155, h: 190, door: [442, 990], lx: 442, ly: 1058, badge: [366, 972] },
-        { name: 'Higher Learning', x: 602, y: 905, w: 155, h: 190, door: [602, 990], lx: 602, ly: 1058, badge: [523, 972] },
+        { name: 'Green Leaf',      x: 122, y: 905, w: 155, h: 190, door: [122, 990], lx: 122, ly: 1058, badge: [122, 912] },
+        { name: 'Sugar High',      x: 283, y: 905, w: 155, h: 190, door: [285, 990], lx: 283, ly: 1058, badge: [283, 912] },
+        { name: 'Kush Corner',     x: 442, y: 905, w: 155, h: 190, door: [442, 990], lx: 442, ly: 1058, badge: [442, 912] },
+        { name: 'Higher Learning', x: 602, y: 905, w: 155, h: 190, door: [602, 990], lx: 602, ly: 1058, badge: [602, 912] },
       ],
       // Campus buildings aren't a neat grid (the library is one big building),
       // so each order spot is listed: door [x, y] and bubble [x, y].
@@ -395,7 +396,7 @@ class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: logo, scale: logo.scale * 1.04, yoyo: true, repeat: -1, duration: 900, ease: 'Sine.InOut' });
 
     // How to play
-    card(this, W / 2, OY + 430, 620, 380);
+    card(this, W / 2, OY + 405, 620, 320);
     text(this, W / 2, OY + 268, 'HOW TO PLAY', 26, '#ffd54f', { fontFamily: 'Arial Black, Arial' });
     const steps = [
       `${Tap} or drag customers to the shop that sells what they want.`,
@@ -564,8 +565,12 @@ class StockScene extends Phaser.Scene {
     }
 
     // Default stock: best-paying products, one per shop.
-    const owned = [...save.owned].sort((a, b) => productByKey[b].pay - productByKey[a].pay);
-    this.stock = owned.slice(0, n);
+    // Default stock: each shop's matching product if you own it, then your
+    // best-paying leftovers for the rest.
+    const byPay = [...save.owned].sort((a, b) => productByKey[b].pay - productByKey[a].pay);
+    this.stock = st.map.shops.map(sh => (save.owned.includes(SHOP_DEFAULTS[sh.name]) ? SHOP_DEFAULTS[sh.name] : null));
+    this.stock = this.stock.map(k => k || byPay.find(p => !this.stock.includes(p)));
+    this.stock = this.stock.map((k, i, arr) => (arr.indexOf(k) === i ? k : byPay.find(p => !arr.includes(p))));
     text(this, W / 2, OY + 220, `STOCK YOUR SHOPS`, 28, '#ffffff', { fontFamily: 'Arial Black, Arial' });
     text(this, W / 2, OY + 260, `${Tap} a shop to change what it sells.`, 20, '#cccccc');
 
