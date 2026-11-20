@@ -125,6 +125,7 @@ const MAPS = {
       { product: 'gummies', name: 'Sugar High', x: 515, y: 897, w: 206, h: 186, door: [520, 980], lx: 515, ly: 1053 },
     ],
     houseX: [148, 252, 468, 572],
+    bubbleX: [128, 272, 448, 592],   // nudged apart so the bigger phone faces don't overlap
     rows: [{ door: 206, bubble: 92 }, { door: 381, bubble: 267 }, { door: 556, bubble: 442 }, { door: 729, bubble: 615 }],
     roadX: [62, 322, 398, 655],
     roadY: [70, 255, 430, 605, 778, 1022],
@@ -137,7 +138,11 @@ const ROAD_Y = M.roadY;
 const COURIER_SPEED = 0.42;                 // pixels per millisecond
 const HOUSE_X = M.houseX;
 const HOUSE_ROWS = M.rows;
-const HOUSES = HOUSE_ROWS.flatMap(r => HOUSE_X.map(x => ({ door: [x, r.door], bubble: [x, r.bubble] })));
+const HOUSES = HOUSE_ROWS.flatMap(r => HOUSE_X.map((x, i) =>
+  ({ door: [x, r.door], bubble: [M.bubbleX ? M.bubbleX[i] : x, r.bubble] })));
+
+// Size of customer faces, badges and rings (bigger on phones).
+const FACE_K = PORTRAIT ? 1.4 : 1;
 
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
 
@@ -455,15 +460,16 @@ class GameScene extends Phaser.Scene {
     const elapsed = LEVEL_SECONDS * 1000 - this.timeLeft;
     const robber = elapsed > ROBBER_AFTER_SECONDS * 1000 && Math.random() < ROBBER_CHANCE;
     const customer = robber ? 'cust-robber' : Phaser.Utils.Array.GetRandom(CUSTOMERS);
-    const bubble = this.add.circle(bx, by, 35, 0x14121c, 0.9)
+    const K = FACE_K;
+    const bubble = this.add.circle(bx, by, 35 * K, 0x14121c, 0.9)
       .setStrokeStyle(3, product.color)
       .setDepth(6)
       // Tap zone is wider than the picture so near misses still count.
-      .setInteractive({ hitArea: new Phaser.Geom.Circle(35, 35, 50), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
-    const face = this.add.image(bx, by, customer).setDisplaySize(65, 65).setDepth(7);
-    const badge = this.add.circle(bx + 29, by + 26, 21, 0x14121c, 0.95)
+      .setInteractive({ hitArea: new Phaser.Geom.Circle(35 * K, 35 * K, 50 * K), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
+    const face = this.add.image(bx, by, customer).setDisplaySize(65 * K, 65 * K).setDepth(7);
+    const badge = this.add.circle(bx + 29 * K, by + 26 * K, 21 * K, 0x14121c, 0.95)
       .setStrokeStyle(3, product.color).setDepth(8);
-    const icon = this.add.image(bx + 29, by + 26, product.icon).setDisplaySize(34, 34).setDepth(9);
+    const icon = this.add.image(bx + 29 * K, by + 26 * K, product.icon).setDisplaySize(34 * K, 34 * K).setDepth(9);
 
     const order = { house, product, customer, robber, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
     house.order = order;
@@ -786,9 +792,9 @@ class GameScene extends Phaser.Scene {
       }
       const color = left > 0.5 ? 0x8bc34a : left > 0.25 ? 0xffc107 : 0xf44336;
       const start = Phaser.Math.DegToRad(-90);
-      this.ringGfx.lineStyle(6, color);
+      this.ringGfx.lineStyle(6 * FACE_K, color);
       this.ringGfx.beginPath();
-      this.ringGfx.arc(order.x, order.y, 42, start, start + Math.PI * 2 * left, false);
+      this.ringGfx.arc(order.x, order.y, 42 * FACE_K, start, start + Math.PI * 2 * left, false);
       this.ringGfx.strokePath();
     }
 
