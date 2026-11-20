@@ -97,10 +97,10 @@ const COP_PROTECT_SECONDS = 30;  // robber-free time after paying him off
 const PRODUCTS = [
   { key: 'flower',   name: 'Flower',    pay: 10, cost: 0,    color: 0x6abf2e, file: 'assets/icon-flower.png' },
   { key: 'gummies',  name: 'Gummies',   pay: 10, cost: 0,    color: 0xe040a0, file: 'assets/icon-gummies.png' },
-  { key: 'prerolls', name: 'Pre-rolls', pay: 15, cost: 300,  color: 0xd9a441, file: null },
-  { key: 'vape',     name: 'Vape Pens', pay: 20, cost: 600,  color: 0x29b6f6, file: null },
-  { key: 'brownies', name: 'Brownies',  pay: 25, cost: 900,  color: 0x8d5524, file: null },
-  { key: 'wax',      name: 'Wax',       pay: 35, cost: 1400, color: 0xffb300, file: null },
+  { key: 'prerolls', name: 'Pre-rolls', pay: 15, cost: 300,  color: 0xd9a441, file: 'assets/icon-prerolls.png' },
+  { key: 'vape',     name: 'Vape Pens', pay: 20, cost: 600,  color: 0x9c4dcc, file: 'assets/icon-vape.png' },
+  { key: 'brownies', name: 'Brownies',  pay: 25, cost: 900,  color: 0x8d5524, file: 'assets/icon-brownies.png' },
+  { key: 'wax',      name: 'Wax',       pay: 35, cost: 1400, color: 0xffb300, file: 'assets/icon-wax.png' },
 ];
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
 const iconKey = p => `icon-${p.key}`;
@@ -112,7 +112,7 @@ const STARTER_PRODUCTS = ['flower', 'gummies'];
 // Regular customers (face images in assets/). Each stage lists who shows up there.
 const CUSTOMER_FILES = ['cust-yoga', 'cust-hoodie', 'cust-conspiracy', 'cust-stoner', 'cust-rapper'];
 const ROBBER_FILE = 'assets/cust-robber.png';
-const COP_FILE = null;           // set to 'assets/cust-cop.png' once you have art
+const COP_FILE = 'assets/cust-cop.png';
 
 // ======================================================================
 // Stages
