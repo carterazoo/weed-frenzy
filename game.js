@@ -145,15 +145,53 @@ const STAGES = [
     id: 'hood', name: 'The Hood', goal: 450, seconds: 100,
     robberChance: 0.15, copChance: 0.08,
     customers: CUSTOMER_FILES,
-    mapFile: null, shopCount: 3,      // waiting on map art
-    map: null,
+    mapFile: 'assets/map-hood-tall.jpg',
+    map: {
+      // badge = where the "what this shop sells" icon sits (over the left flower pot)
+      shops: [
+        { name: 'Green Leaf',  x: 155, y: 905, w: 200, h: 190, door: [160, 990], lx: 155, ly: 1058, badge: [64, 972] },
+        { name: 'Sugar High',  x: 357, y: 905, w: 197, h: 190, door: [357, 990], lx: 357, ly: 1058, badge: [262, 972] },
+        { name: 'Kush Corner', x: 565, y: 905, w: 200, h: 190, door: [568, 990], lx: 565, ly: 1058, badge: [462, 972] },
+      ],
+      houseX: [122, 240, 485, 600],
+      bubbleX: [100, 262, 463, 622],
+      rows: [{ door: 212, bubble: 92 }, { door: 462, bubble: 335 }, { door: 702, bubble: 575 }],
+      // The shops fill the bottom block, so couriers use the outer roads to get uptown.
+      roadX: [15, 705],
+      roadY: [15, 266, 510, 757, 1022],
+    },
   },
   {
     id: 'college', name: 'College', goal: 700, seconds: 110,
     robberChance: 0.15, copChance: 0.1,
     customers: CUSTOMER_FILES,
-    mapFile: null, shopCount: 4,      // waiting on map art
-    map: null,
+    mapFile: 'assets/map-college-tall.jpg',
+    map: {
+      shops: [
+        { name: 'Green Leaf',      x: 122, y: 905, w: 155, h: 190, door: [122, 990], lx: 122, ly: 1058, badge: [50, 972] },
+        { name: 'Sugar High',      x: 283, y: 905, w: 155, h: 190, door: [285, 990], lx: 283, ly: 1058, badge: [208, 972] },
+        { name: 'Kush Corner',     x: 442, y: 905, w: 155, h: 190, door: [442, 990], lx: 442, ly: 1058, badge: [366, 972] },
+        { name: 'Higher Learning', x: 602, y: 905, w: 155, h: 190, door: [602, 990], lx: 602, ly: 1058, badge: [523, 972] },
+      ],
+      // Campus buildings aren't a neat grid (the library is one big building),
+      // so each order spot is listed: door [x, y] and bubble [x, y].
+      houses: [
+        { door: [113, 190], bubble: [98, 92] },    // dorm
+        { door: [250, 190], bubble: [266, 92] },   // dorm
+        { door: [470, 190], bubble: [452, 92] },   // frat
+        { door: [608, 190], bubble: [628, 92] },   // frat
+        { door: [178, 455], bubble: [178, 345] },  // library
+        { door: [474, 445], bubble: [452, 345] },  // lecture hall A
+        { door: [610, 445], bubble: [628, 345] },  // lecture hall B
+        { door: [113, 690], bubble: [98, 590] },   // dorm
+        { door: [248, 690], bubble: [266, 590] },  // dorm
+        { door: [470, 690], bubble: [452, 590] },  // student union
+        { door: [610, 690], bubble: [628, 590] },  // lecture hall C
+      ],
+      // The shops fill the bottom block, so couriers use the outer roads.
+      roadX: [15, 705],
+      roadY: [15, 272, 522, 772, 1024],
+    },
   },
 ];
 const shopCountOf = st => (st.map ? st.map.shops.length : st.shopCount);
@@ -611,9 +649,11 @@ class GameScene extends Phaser.Scene {
     this.roadX = m.roadX;
     this.roadY = m.roadY;
     this.add.image(0, 0, `map-${st.id}`).setOrigin(0).setDisplaySize(MAP_W, MAP_H);
-    this.houses = m.rows.flatMap(r => m.houseX.map((x, i) => ({
-      x, y: r.door, bx: m.bubbleX ? m.bubbleX[i] : x, by: r.bubble, order: null,
-    })));
+    this.houses = m.houses
+      ? m.houses.map(h => ({ x: h.door[0], y: h.door[1], bx: h.bubble[0], by: h.bubble[1], order: null }))
+      : m.rows.flatMap(r => m.houseX.map((x, i) => ({
+        x, y: r.door, bx: m.bubbleX ? m.bubbleX[i] : x, by: r.bubble, order: null,
+      })));
     this.dispensaries = m.shops.map((d, i) => this.makeDispensary(d, this.products[i]));
     this.makeHud();
     this.ringGfx = this.add.graphics().setDepth(5);
@@ -634,7 +674,7 @@ class GameScene extends Phaser.Scene {
     const glow = this.add.rectangle(d.x, d.y, d.w, d.h).setStrokeStyle(5, product.color).setVisible(false);
 
     // What this shop sells: an icon badge on the corner of the building.
-    const bx = d.x + d.w / 2 - 34, by = d.y - d.h / 2 + 34;
+    const [bx, by] = d.badge || [d.x + d.w / 2 - 34, d.y - d.h / 2 + 34];
     this.add.circle(bx, by, 34, 0x14121c, 0.92).setStrokeStyle(4, product.color).setDepth(3);
     this.add.image(bx, by, iconKey(product)).setDisplaySize(52, 52).setDepth(3);
 
