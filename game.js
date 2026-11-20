@@ -6,7 +6,7 @@
 // everything else gets the landscape layout (panel on the right).
 const PORTRAIT = window.innerHeight > window.innerWidth;
 const W = PORTRAIT ? 720 : 960;
-const H = PORTRAIT ? 1280 : 720;
+const H = PORTRAIT ? 1360 : 720;
 const RES = 2;            // render scale for sharpness
 
 // Every text object renders at the same double resolution.
@@ -14,17 +14,20 @@ const _addText = Phaser.GameObjects.GameObjectFactory.prototype.text;
 Phaser.GameObjects.GameObjectFactory.prototype.text = function (x, y, text, style) {
   return _addText.call(this, x, y, text, { resolution: RES, ...style });
 };
-const MAP = 720;          // map is a 720 x 720 square on the left
+// Square map on computers, tall map on phones (720 x 1080).
+const MAP_W = 720;
+const MAP_H = PORTRAIT ? 1080 : 720;
+const MAP_FILE = PORTRAIT ? 'assets/map-suburbs-tall.jpg' : 'assets/map-suburbs.jpg';
 
 // Where the panel pieces go in each layout (game coordinates).
 const HUD = PORTRAIT ? {
-  panel: { key: 'ui-panel-wide', x: 360, y: 1003, w: 704, h: 530 }, bg: [360, 1000, 720, 560],
-  cards: [[575, 845], [575, 980]], cardK: 1.4,
-  note: { x: 150, y: 850, w: 190, h: 182, k: 1.4 },
-  jar: { x: 360, y: 965, w: 197, h: 280 },
-  cash: { x: 150, y: 990, w: 200, h: 56, k: 1.4 },
-  stars: Array.from({ length: 5 }, (_, i) => [150 + (i - 2) * 42, 1070]), starSize: 40,
-  pause: { x: 360, y: 1195, w: 300, h: 80, k: 1.5 },
+  panel: { key: 'ui-panel-wide', x: 360, y: 1220, w: 712, h: 272 }, bg: [360, 1220, 720, 280],
+  cards: [[530, 1172], [530, 1268]], cardK: 0.95,
+  note: { x: 95, y: 1215, w: 140, h: 134, k: 1.03 },
+  jar: { x: 400, y: 1220, w: 141, h: 200 },
+  cash: { x: 250, y: 1185, w: 150, h: 46, k: 1.2 },
+  stars: Array.from({ length: 5 }, (_, i) => [250 + (i - 2) * 30, 1245]), starSize: 29,
+  pause: { x: 644, y: 1220, w: 106, h: 72, k: 0.85 },
 } : {
   panel: { key: 'ui-panel', x: 840, y: 360, w: 236, h: 714 }, bg: [840, 360, 240, 720],
   cards: [[786, 60], [894, 60]], cardK: 1,
@@ -100,23 +103,40 @@ const PRODUCTS = [
 // for the narc mechanic, so he isn't in the regular rotation.
 const CUSTOMERS = ['cust-yoga', 'cust-hoodie', 'cust-conspiracy', 'cust-stoner', 'cust-rapper'];
 
-// Positions match assets/map-suburbs.jpg (map coordinates, 720 x 720).
-// x, y, w, h = clickable area over the painted shop; door = where couriers leave;
-// lx, ly = where the combo letters sit.
-const DISPENSARIES = [
-  { product: 'flower',  name: 'Green Leaf', x: 203, y: 577, w: 178, h: 168, door: [205, 650], lx: 203, ly: 699 },
-  { product: 'gummies', name: 'Sugar High', x: 515, y: 577, w: 182, h: 168, door: [515, 650], lx: 515, ly: 699 },
-];
-
-// Road centerlines on the map, used to route the courier along the streets.
-const ROAD_X = [67, 318, 401, 652];         // north-south roads
-const ROAD_Y = [69, 208, 346, 487, 694];    // east-west roads
+// Positions on each map (map coordinates).
+// Shops: x, y, w, h = clickable area over the painted shop; door = where couriers
+// leave; lx, ly = where the combo letters sit.
+// Houses: a door (courier stop, tip drop) and a bubble spot above the roof, per row.
+// Roads: centerlines used to route the courier along the streets.
+const MAPS = {
+  square: {   // assets/map-suburbs.jpg, 720 x 720, 12 houses
+    shops: [
+      { product: 'flower',  name: 'Green Leaf', x: 203, y: 577, w: 178, h: 168, door: [205, 650], lx: 203, ly: 699 },
+      { product: 'gummies', name: 'Sugar High', x: 515, y: 577, w: 182, h: 168, door: [515, 650], lx: 515, ly: 699 },
+    ],
+    houseX: [148, 252, 470, 575],
+    rows: [{ door: 170, bubble: 76 }, { door: 307, bubble: 214 }, { door: 445, bubble: 352 }],
+    roadX: [67, 318, 401, 652],
+    roadY: [69, 208, 346, 487, 694],
+  },
+  tall: {     // assets/map-suburbs-tall.jpg, 720 x 1080, 16 houses
+    shops: [
+      { product: 'flower',  name: 'Green Leaf', x: 200, y: 897, w: 200, h: 186, door: [205, 980], lx: 200, ly: 1053 },
+      { product: 'gummies', name: 'Sugar High', x: 515, y: 897, w: 206, h: 186, door: [520, 980], lx: 515, ly: 1053 },
+    ],
+    houseX: [148, 252, 468, 572],
+    rows: [{ door: 206, bubble: 92 }, { door: 381, bubble: 267 }, { door: 556, bubble: 442 }, { door: 729, bubble: 615 }],
+    roadX: [62, 322, 398, 655],
+    roadY: [70, 255, 430, 605, 778, 1022],
+  },
+};
+const M = PORTRAIT ? MAPS.tall : MAPS.square;
+const DISPENSARIES = M.shops;
+const ROAD_X = M.roadX;
+const ROAD_Y = M.roadY;
 const COURIER_SPEED = 0.42;                 // pixels per millisecond
-
-// Houses painted on the map: 3 rows of 4. door = where the courier stops and
-// the tip drops; bubble = where the order bubble appears (above the roof).
-const HOUSE_X = [148, 252, 470, 575];
-const HOUSE_ROWS = [ { door: 170, bubble: 76 }, { door: 307, bubble: 214 }, { door: 445, bubble: 352 } ];
+const HOUSE_X = M.houseX;
+const HOUSE_ROWS = M.rows;
 const HOUSES = HOUSE_ROWS.flatMap(r => HOUSE_X.map(x => ({ door: [x, r.door], bubble: [x, r.bubble] })));
 
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
@@ -126,7 +146,7 @@ class TitleScene extends Phaser.Scene {
   constructor() { super('title'); }
 
   preload() {
-    this.load.image('map', 'assets/map-suburbs.jpg');
+    this.load.image('map', MAP_FILE);
     this.load.image('icon-flower', 'assets/icon-flower.png');
     this.load.image('icon-gummies', 'assets/icon-gummies.png');
     this.load.image('courier', 'assets/courier.png');
@@ -149,7 +169,7 @@ class TitleScene extends Phaser.Scene {
     this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
 
     // Dimmed map behind everything
-    this.add.image(W / 2, H / 2, 'map').setDisplaySize(H, H);
+    this.add.image(W / 2, H / 2, 'map').setDisplaySize(H * MAP_W / MAP_H, H);
     this.add.rectangle(W / 2, H / 2, W, H, 0x0c0a12, 0.6);
     const OY = (H - 720) / 2;   // centers the layout on tall phone screens
 
@@ -242,7 +262,7 @@ class GameScene extends Phaser.Scene {
 
   // ---------- Map ----------
   drawMap() {
-    this.add.image(0, 0, 'map').setOrigin(0).setDisplaySize(MAP, MAP);
+    this.add.image(0, 0, 'map').setOrigin(0).setDisplaySize(MAP_W, MAP_H);
   }
 
   makeHouse(h) {
@@ -406,10 +426,10 @@ class GameScene extends Phaser.Scene {
       this.tweens.pauseAll();
       this.sound.pauseAll();
       this.select(null);
-      this.pauseCover = this.add.rectangle(MAP / 2, H / 2, MAP, H, 0x000000, 0.6)
+      this.pauseCover = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.6)
         .setDepth(45).setInteractive();
       this.pauseCover.on('pointerdown', () => this.togglePause());
-      this.pauseLabel = this.add.text(MAP / 2, MAP / 2, `PAUSED\n${TAP} to resume`, {
+      this.pauseLabel = this.add.text(MAP_W / 2, MAP_H / 2, `PAUSED\n${TAP} to resume`, {
         fontFamily: 'Arial Black, Arial', fontSize: '40px', color: '#ffffff', align: 'center',
       }).setOrigin(0.5).setDepth(46);
       this.pauseText.setText('RESUME');
@@ -699,14 +719,14 @@ class GameScene extends Phaser.Scene {
   showFrenzy(disp) {
     sfx(this, 'frenzy');
     this.cameras.main.flash(200, 255, 255, 255);
-    const t = this.add.text(MAP / 2, MAP / 2, `${FRENZY_TEXT}\n+$${FRENZY_BONUS}`, {
+    const t = this.add.text(MAP_W / 2, MAP_H / 2, `${FRENZY_TEXT}\n+$${FRENZY_BONUS}`, {
       fontFamily: 'Arial Black, Arial', fontSize: '68px', color: '#ffffff', align: 'center',
       stroke: '#' + disp.color.toString(16).padStart(6, '0'), strokeThickness: 13,
     }).setOrigin(0.5).setDepth(35).setScale(0);
     this.tweens.add({
       targets: t, scale: 1, duration: 300, ease: 'Back.Out',
       onComplete: () => this.tweens.add({
-        targets: t, alpha: 0, y: MAP / 2 - 40, delay: 700, duration: 400, onComplete: () => t.destroy(),
+        targets: t, alpha: 0, y: MAP_H / 2 - 40, delay: 700, duration: 400, onComplete: () => t.destroy(),
       }),
     });
   }
@@ -785,7 +805,7 @@ class GameScene extends Phaser.Scene {
   }
 
   showBanner(msg, ms) {
-    const t = this.add.text(MAP / 2, 488, msg, {
+    const t = this.add.text(MAP_W / 2, MAP_H / 2 + 128, msg, {
       fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', align: 'center',
       backgroundColor: '#000000aa', padding: { x: 12, y: 8 },
     }).setOrigin(0.5).setDepth(30);
