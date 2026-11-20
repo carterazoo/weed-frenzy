@@ -113,6 +113,8 @@ const SHOP_DEFAULTS = { 'Green Leaf': 'flower', 'Sugar High': 'gummies', 'Kush C
 // ======================================================================
 // Regular customers (face images in assets/). Each stage lists who shows up there.
 const CUSTOMER_FILES = ['cust-yoga', 'cust-hoodie', 'cust-conspiracy', 'cust-stoner', 'cust-rapper'];
+const SUBURBS_CUSTOMERS = ['cust-soccermom', 'cust-grilldad', 'cust-retiree'];
+const HOOD_CUSTOMERS = ['cust-grandma', 'cust-barber', 'cust-storeowner'];
 const ROBBER_FILE = 'assets/cust-robber.png';
 const COP_FILE = 'assets/cust-cop.png';
 
@@ -129,7 +131,7 @@ const STAGES = [
   {
     id: 'suburbs', name: 'Suburbs', goal: 250, seconds: 90,
     robberChance: 0.12, copChance: 0.06,
-    customers: CUSTOMER_FILES,
+    customers: [...CUSTOMER_FILES, ...SUBURBS_CUSTOMERS],
     mapFile: 'assets/map-suburbs-tall.jpg',
     map: {
       shops: [
@@ -146,7 +148,7 @@ const STAGES = [
   {
     id: 'hood', name: 'The Hood', goal: 450, seconds: 100,
     robberChance: 0.15, copChance: 0.08,
-    customers: CUSTOMER_FILES,
+    customers: [...CUSTOMER_FILES, ...HOOD_CUSTOMERS],
     mapFile: 'assets/map-hood-tall.jpg',
     map: {
             shops: [
@@ -373,7 +375,8 @@ class TitleScene extends Phaser.Scene {
   preload() {
     STAGES.forEach(st => { if (st.mapFile) this.load.image(`map-${st.id}`, st.mapFile); });
     PRODUCTS.forEach(p => { if (p.file) this.load.image(iconKey(p), p.file); });
-    ['courier', 'tip', 'jar-coin', 'jar-bill', ...CUSTOMER_FILES,
+    const faces = [...new Set(STAGES.flatMap(st => st.customers))];
+    ['courier', 'tip', 'jar-coin', 'jar-bill', ...faces,
       'ui-panel-wide', 'ui-panel-tall', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
       .forEach(k => this.load.image(k, `assets/${k}.png`));
     for (let i = 0; i < COMBO_WORD.length; i++) {
