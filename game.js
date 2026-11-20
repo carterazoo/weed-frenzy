@@ -856,6 +856,8 @@ new Phaser.Game({
   height: H * RES,
   backgroundColor: '#14121c',
   scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
-  audio: { disableWebAudio: true },   // plain HTML5 audio also works from a double-clicked file
+  // Web Audio on the real site (reliable on phones); plain HTML5 audio only when
+  // the game is opened as a double-clicked local file, where Web Audio can't load.
+  audio: { disableWebAudio: location.protocol === 'file:' },
   scene: [TitleScene, GameScene],
 });
