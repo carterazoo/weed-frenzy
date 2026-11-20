@@ -1,6 +1,7 @@
-// Weed Frenzy prototype (milestone 1)
-// One map, 2 dispensaries, orders with patience rings, 5 stars, tips, level timer,
-// BLAZE combo letters. Art lives in the assets folder.
+// Weed Frenzy
+// Customers order Flower or Gummies; send each order to the right dispensary.
+// Carry up to 3 of a kind, light B-L-A-Z-E for a frenzy, grab tips, dodge the robber.
+// Art lives in assets/, sounds in assets/sounds/.
 
 // Phones held upright get a portrait layout (map on top, panel below);
 // everything else gets the landscape layout (panel on the right).
@@ -41,8 +42,9 @@ const TAP = ('ontouchstart' in window) ? 'tap' : 'click';
 const JK = HUD.jar.h / 200;   // jar scale relative to the original 200 px jar
 
 // Turning the phone switches layouts, which needs a reload.
+// (Phones/tablets only, so resizing a computer window never restarts the game.)
 window.addEventListener('resize', () => {
-  if ((window.innerHeight > window.innerWidth) !== PORTRAIT) location.reload();
+  if (('ontouchstart' in window) && (window.innerHeight > window.innerWidth) !== PORTRAIT) location.reload();
 });
 
 // ---- Tuning knobs (change these to adjust difficulty) ----
@@ -61,7 +63,7 @@ const RUSH_SECONDS = 20;       // rush hour: last N seconds spawn twice as fast
 // dispensary. Light the whole word for a frenzy bonus. Any 5-letter word works.
 const COMBO_WORD = 'BLAZE';
 const FRENZY_BONUS = 50;
-const JAR_ITEMS = 34;
+const JAR_ITEMS = 34;          // bills and coins in a full jar
 
 // The robber: looks like a normal order. Serve him and he steals some of your
 // cash; ignore him and he leaves with no penalty.
@@ -83,8 +85,8 @@ const SOUNDS = {
   deliver: 'assets/sounds/deliver.mp3',   // order sent to the right shop
   tip: 'assets/sounds/tip.mp3',       // tip collected
   letter: null,    // a BLAZE letter lights
-  frenzy: 'assets/sounds/frenzy.mp3',
-  robber: 'assets/sounds/robber.mp3',   // the robber shows up    // WEED FRENZY!
+  frenzy: 'assets/sounds/frenzy.mp3',   // WEED FRENZY!
+  robber: 'assets/sounds/robber.mp3',   // the robber shows up
   miss: null,      // too slow / wrong shop
   gameover: null,  // level over
 };
@@ -102,7 +104,14 @@ function savedMute() {
 function saveMute(m) {
   try { localStorage.setItem('weedfrenzy-mute', m ? '1' : '0'); } catch (e) { /* ignore */ }
 }
-function soundLabel(scene) { return scene.sound.mute ? '🔇 Sound off' : '🔊 Sound on'; }          // bills and coins in a full jar
+// Best cash total, remembered on this device.
+function savedBest() {
+  try { return parseInt(localStorage.getItem('weedfrenzy-best') || '0', 10) || 0; } catch (e) { return 0; }
+}
+function saveBest(n) {
+  try { localStorage.setItem('weedfrenzy-best', String(n)); } catch (e) { /* ignore */ }
+}
+function soundLabel(scene) { return scene.sound.mute ? '🔇 Sound off' : '🔊 Sound on'; }
 const FRENZY_TEXT = 'WEED FRENZY!';   // banner shown when the word is complete
 
 // How many orders of the same product you can pick up before clicking a shop.
@@ -180,7 +189,7 @@ class TitleScene extends Phaser.Scene {
       this.load.image(`letter-${i}-off`, `assets/letter-${i}-off.png`);
       this.load.image(`letter-${i}-on`, `assets/letter-${i}-on.png`);
     }
-    [...CUSTOMERS, 'cust-narc'].forEach(k => this.load.image(k, `assets/${k}.png`));
+    CUSTOMERS.forEach(k => this.load.image(k, `assets/${k}.png`));
     ['ui-panel', 'ui-panel-wide', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
       .forEach(k => this.load.image(k, `assets/${k}.png`));
     if (LOGO_FILE) this.load.image('logo', LOGO_FILE);
@@ -235,7 +244,15 @@ class TitleScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.tweens.add({ targets: start, scale: 1.08, yoyo: true, repeat: -1, duration: 600 });
 
-    // The first click also unlocks sound in the browser.
+    // Best score (top left)
+    const best = savedBest();
+    if (best > 0) {
+      this.add.text(20, 20, `🏆 Best: $${best}`, {
+        fontFamily: 'Arial', fontSize: '22px', color: '#ffd54f', backgroundColor: '#14121ccc',
+        padding: { x: 12, y: 8 },
+      });
+    }
+
     // Sound on/off button (top right)
     this.sound.mute = savedMute();
     const muteBtn = this.add.text(W - 20, 20, soundLabel(this), {
@@ -248,6 +265,8 @@ class TitleScene extends Phaser.Scene {
       muteBtn.setText(soundLabel(this));
     });
 
+    // The first tap starts the game (and unlocks sound in the browser).
+    this.started = false;
     this.input.on('pointerdown', (pointer, objects) => {
       if (objects.includes(muteBtn) || this.started) return;
       this.started = true;
@@ -270,7 +289,6 @@ function sfx(scene, key, config = {}) {
 class GameScene extends Phaser.Scene {
   constructor() { super('game'); }
 
-
   create() {
     this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
     this.makeJarTextures();
@@ -285,6 +303,7 @@ class GameScene extends Phaser.Scene {
     this.orders = [];
     this.comboProduct = null;
     this.comboCount = 0;
+    this.stats = { delivered: 0, frenzies: 0, tips: 0, tipCash: 0, robbed: 0, stolen: 0, missed: 0 };
     this.over = false;
     this.paused = false;
     this.time.paused = false;
@@ -292,6 +311,7 @@ class GameScene extends Phaser.Scene {
     this.drawMap();
     this.houses = HOUSES.map(h => this.makeHouse(h));
     this.dispensaries = DISPENSARIES.map(d => this.makeDispensary(d));
+    this.hudKey = null;
     this.makeHud();
 
     this.ringGfx = this.add.graphics().setDepth(5);
@@ -303,7 +323,7 @@ class GameScene extends Phaser.Scene {
       if (!this.over && objects.length === 0) this.select(null);
     });
 
-    this.showBanner('Click a customer, then the dispensary\nthat sells what they want.', 2500);
+    this.showBanner(`${TAP === 'tap' ? 'Tap' : 'Click'} or drag a customer to the shop\nthat sells what they want.`, 2500);
   }
 
   // ---------- Map ----------
@@ -337,6 +357,7 @@ class GameScene extends Phaser.Scene {
     box.on('pointerdown', () => this.onDispensaryClick(disp));
     box.on('pointerover', () => glow.setVisible(true));
     box.on('pointerout', () => glow.setVisible(false));
+    box.on('pointerup', () => { if (TAP === 'tap') glow.setVisible(false); });   // no hover on touch screens
     return disp;
   }
 
@@ -394,8 +415,12 @@ class GameScene extends Phaser.Scene {
   }
 
   updateHud() {
-    this.cashText.setText(`$${this.cash}`);
+    // Only redraw what changed (text redraws are slow on phones).
     const s = Math.max(0, Math.ceil(this.timeLeft / 1000));
+    const key = `${this.cash}|${s}|${this.stars}`;
+    if (key === this.hudKey) return;
+    this.hudKey = key;
+    this.cashText.setText(`$${this.cash}`);
     this.timeText.setText(`${s}`);
     this.timeText.setColor(s <= RUSH_SECONDS ? '#d84315' : '#3b2a1a');
     this.starIcons.forEach((img, i) => img.setTexture(i < this.stars ? 'star-full' : 'star-empty'));
@@ -577,11 +602,12 @@ class GameScene extends Phaser.Scene {
 
       // A copy of the icon follows the pointer, with a count when carrying several.
       const ghost = this.add.container(pointer.worldX, pointer.worldY).setDepth(50);
-      ghost.add(this.add.circle(0, 0, 34, 0x14121c, 0.85).setStrokeStyle(4, 0xffffff));
-      ghost.add(this.add.image(0, 0, order.product.icon).setDisplaySize(52, 52));
+      const g = UI_K;
+      ghost.add(this.add.circle(0, 0, 34 * g, 0x14121c, 0.85).setStrokeStyle(4, 0xffffff));
+      ghost.add(this.add.image(0, 0, order.product.icon).setDisplaySize(52 * g, 52 * g));
       if (this.selected.length > 1) {
-        ghost.add(this.add.text(26, -31, `x${this.selected.length}`, {
-          fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', fontStyle: 'bold',
+        ghost.add(this.add.text(26 * g, -31 * g, `x${this.selected.length}`, {
+          fontFamily: 'Arial', fontSize: `${Math.round(18 * g)}px`, color: '#ffffff', fontStyle: 'bold',
           stroke: '#000000', strokeThickness: 4,
         }).setOrigin(0.5));
       }
@@ -639,11 +665,8 @@ class GameScene extends Phaser.Scene {
       sfx(this, 'deliver');
       real.forEach((order, i) => this.deliver(order, disp, i));
     } else {
-      // Every order sent to the wrong shop is a miss.
-      for (const order of real) {
-        this.fail(order, 'Wrong shop!');
-        if (this.over) break;
-      }
+      // A wrong-shop batch: those customers leave, but it costs one star, not one each.
+      this.fail(real, 'Wrong shop!');
     }
   }
 
@@ -652,6 +675,8 @@ class GameScene extends Phaser.Scene {
     this.removeOrder(order);
     const stolen = Math.ceil(this.cash * ROBBER_STEAL);
     this.cash -= stolen;
+    this.stats.robbed += 1;
+    this.stats.stolen += stolen;
     this.resetCombo();
     sfx(this, 'miss');
     this.cameras.main.shake(250, 0.008);
@@ -662,6 +687,7 @@ class GameScene extends Phaser.Scene {
   deliver(order, disp, i = 0) {
     const { house } = order;
     this.removeOrder(order);
+    this.stats.delivered += 1;
     this.cash += ORDER_PAY;
     this.floatText(house.bx, house.by - 30, `+$${ORDER_PAY}`, '#c5ff9e');
     this.advanceCombo(disp);
@@ -724,13 +750,18 @@ class GameScene extends Phaser.Scene {
       expire.remove();
       this.tweens.killTweensOf(tip);
       tip.destroy();
-      this.floatText(house.x + 26, house.y - 24, `tip +$${amount}`, '#ffe082');
+      this.floatText(house.x + 26 * UI_K, house.y - 24 * UI_K, `tip +$${amount}`, '#ffe082');
       sfx(this, 'tip');
-      // The tip flies over to the jar, then counts.
-      const coin = this.add.image(house.x + 26, house.y, 'jar-coin').setDepth(40).setDisplaySize(36, 36);
+      // Counts right away (so a tip grabbed in the last second still counts);
+      // the coin flying to the jar is just for show.
+      this.cash += amount;
+      this.stats.tips += 1;
+      this.stats.tipCash += amount;
+      this.updateHud();
+      const coin = this.add.image(house.x + 26 * UI_K, house.y, 'jar-coin').setDepth(40).setDisplaySize(36 * UI_K, 36 * UI_K);
       this.tweens.add({
         targets: coin, x: HUD.jar.x, y: HUD.jar.y - 78 * JK, scale: coin.scale * 0.7, duration: 500, ease: 'Quad.In',
-        onComplete: () => { coin.destroy(); this.cash += amount; this.updateHud(); },
+        onComplete: () => coin.destroy(),
       });
     });
   }
@@ -748,18 +779,23 @@ class GameScene extends Phaser.Scene {
 
     if (this.comboCount >= COMBO_WORD.length) {
       this.cash += FRENZY_BONUS;
+      this.stats.frenzies += 1;
       this.showFrenzy(disp);
       this.comboProduct = null;
       this.comboCount = 0;
-      this.time.delayedCall(700, () => { if (!this.over) this.lightLetters(disp, 0); });
+      // Clear the word after the banner, but keep any letter the next order in
+      // the same batch has already lit.
+      this.time.delayedCall(700, () => {
+        if (!this.over) this.lightLetters(disp, this.comboProduct === disp.product ? this.comboCount : 0, false);
+      });
     }
   }
 
-  lightLetters(disp, count = this.comboCount) {
+  lightLetters(disp, count = this.comboCount, animate = true) {
     disp.letters.forEach((t, i) => {
       const lit = i < count;
       t.setTexture(`letter-${i}-${lit ? 'on' : 'off'}`);
-      if (lit && i === count - 1) {
+      if (animate && lit && i === count - 1) {
         sfx(this, 'letter');
         this.tweens.add({ targets: t, scale: { from: t.baseScale * 1.6, to: t.baseScale }, duration: 250, ease: 'Back.Out' });
       }
@@ -788,13 +824,17 @@ class GameScene extends Phaser.Scene {
     });
   }
 
-  fail(order, label) {
-    const { house } = order;
-    this.removeOrder(order);
+  // A miss: one order (too slow) or a whole batch (wrong shop). Costs one star.
+  fail(orders, label) {
+    const list = Array.isArray(orders) ? orders : [orders];
+    list.forEach(order => {
+      this.removeOrder(order);
+      this.floatText(order.house.bx, order.house.by - 30, label, '#ff6b6b');
+    });
+    this.stats.missed += list.length;
     this.resetCombo();
     this.stars -= 1;
     sfx(this, 'miss');
-    this.floatText(house.bx, house.by - 30, label, '#ff6b6b');
     this.cameras.main.shake(150, 0.004);
     this.updateHud();
     if (this.stars <= 0) this.endGame(false);
@@ -863,7 +903,7 @@ class GameScene extends Phaser.Scene {
 
   showBanner(msg, ms) {
     const t = this.add.text(MAP_W / 2, MAP_H / 2 + 128, msg, {
-      fontFamily: 'Arial', fontSize: '18px', color: '#ffffff', align: 'center',
+      fontFamily: 'Arial', fontSize: `${Math.round(18 * UI_K)}px`, color: '#ffffff', align: 'center',
       backgroundColor: '#000000aa', padding: { x: 12, y: 8 },
     }).setOrigin(0.5).setDepth(30);
     this.time.delayedCall(ms, () => this.tweens.add({ targets: t, alpha: 0, duration: 400, onComplete: () => t.destroy() }));
@@ -877,19 +917,56 @@ class GameScene extends Phaser.Scene {
     this.ringGfx.clear();
     this.select(null);
 
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.65).setDepth(40);
-    const title = won ? 'Level complete!' : (this.stars <= 0 ? 'Out of stars!' : 'Missed the target');
-    this.add.text(W / 2, H / 2 - 50, title, {
-      fontFamily: 'Arial', fontSize: '44px', color: won ? '#c5ff9e' : '#ff8a80', fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(41);
-    this.add.text(W / 2, H / 2 + 10, `Cash: $${this.cash}  (target $${CASH_TARGET})`, {
-      fontFamily: 'Arial', fontSize: '24px', color: '#ffffff',
-    }).setOrigin(0.5).setDepth(41);
-    this.add.text(W / 2, H / 2 + 60, `${TAP === 'tap' ? 'Tap' : 'Click'} to play again`, {
-      fontFamily: 'Arial', fontSize: '20px', color: '#bbbbbb',
-    }).setOrigin(0.5).setDepth(41);
+    // Best score
+    const prevBest = savedBest();
+    const newBest = this.cash > prevBest;
+    if (newBest) saveBest(this.cash);
 
-    this.time.delayedCall(600, () => this.input.once('pointerdown', () => this.scene.restart()));
+    const cx = W / 2, cy = H / 2;
+    const txt = (x, y, str, size, color = '#ffffff', extra = {}) => this.add.text(x, y, str, {
+      fontFamily: 'Arial', fontSize: size, color, fontStyle: 'bold', align: 'center', ...extra,
+    }).setOrigin(0.5).setDepth(42);
+
+    this.add.rectangle(cx, cy, W, H, 0x000000, 0.65).setDepth(40);
+    const box = this.add.graphics().setDepth(41);
+    box.fillStyle(0x14121c, 0.95).fillRoundedRect(cx - 290, cy - 250, 580, 500, 24);
+    box.lineStyle(5, won ? 0x8ee34a : 0xff8a80).strokeRoundedRect(cx - 290, cy - 250, 580, 500, 24);
+
+    const title = won ? 'Level complete!' : (this.stars <= 0 ? 'Out of stars!' : 'Missed the goal');
+    txt(cx, cy - 205, title, '42px', won ? '#c5ff9e' : '#ff8a80', { fontFamily: 'Arial Black, Arial' });
+    txt(cx, cy - 150, `Cash: $${this.cash}   (goal $${CASH_TARGET})`, '26px');
+    txt(cx, cy - 110, newBest ? `🏆 NEW BEST: $${this.cash}!` : `🏆 Best: $${Math.max(prevBest, this.cash)}`,
+      '22px', '#ffd54f');
+
+    // Stats
+    const st = this.stats;
+    const rows = [
+      ['Orders delivered', `${st.delivered}`],
+      ['WEED FRENZY bonuses', `${st.frenzies}`],
+      ['Tips grabbed', `${st.tips}  (+$${st.tipCash})`],
+      ['Times robbed', st.robbed ? `${st.robbed}  (-$${st.stolen})` : '0'],
+      ['Missed orders', `${st.missed}`],
+    ];
+    rows.forEach(([name, val], i) => {
+      const y = cy - 55 + i * 36;
+      this.add.text(cx - 230, y, name, { fontFamily: 'Arial', fontSize: '21px', color: '#cccccc' })
+        .setOrigin(0, 0.5).setDepth(42);
+      this.add.text(cx + 230, y, val, { fontFamily: 'Arial', fontSize: '21px', color: '#ffffff', fontStyle: 'bold' })
+        .setOrigin(1, 0.5).setDepth(42);
+    });
+
+    // Buttons
+    const button = (x, label, onTap) => {
+      const b = this.add.image(x, cy + 190, 'ui-button').setDisplaySize(230, 72).setDepth(42)
+        .setInteractive({ useHandCursor: true });
+      const t = txt(x, cy + 189, label, '22px', '#ffffff', { fontFamily: 'Arial Black, Arial' });
+      t.setStroke('#3b2a1a', 5).setDepth(43);
+      b.on('pointerdown', onTap);
+    };
+    this.time.delayedCall(500, () => {   // short delay so a frantic last tap doesn't hit a button
+      button(cx - 130, 'PLAY AGAIN', () => this.scene.restart());
+      button(cx + 130, 'MAIN MENU', () => this.scene.start('title'));
+    });
   }
 }
 
