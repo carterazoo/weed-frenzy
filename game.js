@@ -87,7 +87,22 @@ const SOUNDS = {
   robber: 'assets/sounds/robber.mp3',   // the robber shows up    // WEED FRENZY!
   miss: null,      // too slow / wrong shop
   gameover: null,  // level over
-};          // bills and coins in a full jar
+};
+
+// Volume for each sound, 0 to 1. Lower a number if a sound is too much.
+const SOUND_VOLUME = {
+  music: 0.35, pop: 0.5, pickup: 0.6, deliver: 0.3, tip: 0.45,
+  letter: 0.7, frenzy: 0.9, miss: 0.8, gameover: 0.9, robber: 0.8,
+};
+
+// Mute setting, remembered between visits.
+function savedMute() {
+  try { return localStorage.getItem('weedfrenzy-mute') === '1'; } catch (e) { return false; }
+}
+function saveMute(m) {
+  try { localStorage.setItem('weedfrenzy-mute', m ? '1' : '0'); } catch (e) { /* ignore */ }
+}
+function soundLabel(scene) { return scene.sound.mute ? '🔇 Sound off' : '🔊 Sound on'; }          // bills and coins in a full jar
 const FRENZY_TEXT = 'WEED FRENZY!';   // banner shown when the word is complete
 
 // How many orders of the same product you can pick up before clicking a shop.
@@ -221,7 +236,21 @@ class TitleScene extends Phaser.Scene {
     this.tweens.add({ targets: start, scale: 1.08, yoyo: true, repeat: -1, duration: 600 });
 
     // The first click also unlocks sound in the browser.
-    this.input.once('pointerdown', () => {
+    // Sound on/off button (top right)
+    this.sound.mute = savedMute();
+    const muteBtn = this.add.text(W - 20, 20, soundLabel(this), {
+      fontFamily: 'Arial', fontSize: '22px', color: '#ffffff', backgroundColor: '#14121ccc',
+      padding: { x: 12, y: 8 },
+    }).setOrigin(1, 0).setInteractive({ useHandCursor: true });
+    muteBtn.on('pointerdown', () => {
+      this.sound.mute = !this.sound.mute;
+      saveMute(this.sound.mute);
+      muteBtn.setText(soundLabel(this));
+    });
+
+    this.input.on('pointerdown', (pointer, objects) => {
+      if (objects.includes(muteBtn) || this.started) return;
+      this.started = true;
       // Safari can leave audio asleep until it's explicitly woken on a tap.
       const ctx = this.sound.context;
       if (ctx && ctx.state !== 'running') ctx.resume();
@@ -232,8 +261,10 @@ class TitleScene extends Phaser.Scene {
 }
 
 // Plays a sound only if its file is set in SOUNDS (silently skips otherwise).
-function sfx(scene, key, config) {
-  if (scene.cache.audio.exists(key)) scene.sound.play(key, config);
+function sfx(scene, key, config = {}) {
+  if (scene.cache.audio.exists(key)) {
+    scene.sound.play(key, { volume: SOUND_VOLUME[key] ?? 1, ...config });
+  }
 }
 
 class GameScene extends Phaser.Scene {
@@ -243,8 +274,9 @@ class GameScene extends Phaser.Scene {
   create() {
     this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
     this.makeJarTextures();
+    this.sound.mute = savedMute();
     this.sound.stopAll();
-    sfx(this, 'music', { loop: true, volume: 0.35 });
+    sfx(this, 'music', { loop: true });
     this.cash = 0;
     this.stars = START_STARS;
     this.timeLeft = LEVEL_SECONDS * 1000;
@@ -446,12 +478,22 @@ class GameScene extends Phaser.Scene {
       this.pauseLabel = this.add.text(MAP_W / 2, MAP_H / 2, `PAUSED\n${TAP} to resume`, {
         fontFamily: 'Arial Black, Arial', fontSize: '40px', color: '#ffffff', align: 'center',
       }).setOrigin(0.5).setDepth(46);
+      this.pauseSound = this.add.text(MAP_W / 2, MAP_H / 2 + 110, soundLabel(this), {
+        fontFamily: 'Arial', fontSize: '26px', color: '#ffffff', backgroundColor: '#2b1a0e',
+        padding: { x: 16, y: 10 },
+      }).setOrigin(0.5).setDepth(47).setInteractive({ useHandCursor: true });
+      this.pauseSound.on('pointerdown', () => {
+        this.sound.mute = !this.sound.mute;
+        saveMute(this.sound.mute);
+        this.pauseSound.setText(soundLabel(this));
+      });
       this.pauseText.setText('RESUME');
     } else {
       this.tweens.resumeAll();
       this.sound.resumeAll();
       this.pauseCover.destroy();
       this.pauseLabel.destroy();
+      this.pauseSound.destroy();
       this.pauseText.setText('PAUSE');
     }
   }
@@ -483,7 +525,7 @@ class GameScene extends Phaser.Scene {
     const order = { house, product, customer, robber, bubble, icon, parts: [bubble, face, badge, icon], x: bx, y: by, waited: 0 };
     house.order = order;
     this.orders.push(order);
-    if (robber) sfx(this, 'robber'); else sfx(this, 'pop', { volume: 0.5 });
+    if (robber) sfx(this, 'robber'); else sfx(this, 'pop');
     // Click to pick up (on release, so a drag doesn't count as a click),
     // or drag it onto a shop.
     bubble.orderRef = order;
@@ -517,7 +559,7 @@ class GameScene extends Phaser.Scene {
       return;
     }
     this.selected.push(order);
-    sfx(this, 'pickup', { volume: 0.6 });
+    sfx(this, 'pickup');
     order.bubble.setStrokeStyle(5, 0xffffff);
     this.tweens.add({ targets: order.bubble, scale: { from: 1.25, to: 1 }, duration: 150 });
   }
@@ -718,7 +760,7 @@ class GameScene extends Phaser.Scene {
       const lit = i < count;
       t.setTexture(`letter-${i}-${lit ? 'on' : 'off'}`);
       if (lit && i === count - 1) {
-        sfx(this, 'letter', { volume: 0.7 });
+        sfx(this, 'letter');
         this.tweens.add({ targets: t, scale: { from: t.baseScale * 1.6, to: t.baseScale }, duration: 250, ease: 'Back.Out' });
       }
     });
