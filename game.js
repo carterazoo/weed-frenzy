@@ -116,7 +116,8 @@ const SHOP_DEFAULTS = { 'Green Leaf': 'flower', 'Sugar High': 'gummies', 'Kush C
 // Regular customers (face images in assets/). Each stage lists who shows up there.
 const CUSTOMER_FILES = ['cust-yoga', 'cust-hoodie', 'cust-conspiracy', 'cust-stoner', 'cust-rapper'];
 const SUBURBS_CUSTOMERS = ['cust-soccermom', 'cust-grilldad', 'cust-retiree'];
-const HOOD_CUSTOMERS = ['cust-grandma', 'cust-barber', 'cust-storeowner'];
+const HOOD_CUSTOMERS = ['cust-grandma', 'cust-barber', 'cust-storeowner', 'cust-baller', 'cust-producer'];
+const COLLEGE_CUSTOMERS = ['cust-fratguy', 'cust-sorority', 'cust-professor', 'cust-artstudent', 'cust-freshman'];
 const ROBBER_FILE = 'assets/cust-robber.png';
 const COP_FILE = 'assets/cust-cop.png';
 
@@ -169,7 +170,7 @@ const STAGES = [
   {
     id: 'college', name: 'College', goal: 700, seconds: 110,
     robberChance: 0.15, copChance: 0.1,
-    customers: CUSTOMER_FILES,
+    customers: [...CUSTOMER_FILES, ...COLLEGE_CUSTOMERS],
     mapFile: 'assets/map-college-tall.jpg',
     map: {
       shops: [
