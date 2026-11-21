@@ -490,7 +490,7 @@ class StagesScene extends Phaser.Scene {
     });
 
     const by = OY + 1000;
-    woodButton(this, W / 2 - 150, by, 260, 76, '🛒 SHOP', () => this.scene.start('shop', { back: 'stages' }));
+    woodButton(this, W / 2 - 150, by, 260, 76, 'SHOP', () => this.scene.start('shop', { back: 'stages' }));
     woodButton(this, W / 2 + 150, by, 260, 76, 'TITLE', () => this.scene.start('title'));
   }
 }
@@ -565,7 +565,7 @@ class StockScene extends Phaser.Scene {
       text(this, W / 2, OY + 360, `This stage has ${n} shops.`, 28, '#ffffff');
       text(this, W / 2, OY + 410, `You own ${save.owned.length} products.`, 24, '#ffd54f');
       text(this, W / 2, OY + 470, `Buy ${n - save.owned.length} more in the shop to open it.`, 22, '#cccccc');
-      woodButton(this, W / 2, OY + 680, 300, 80, '🛒 SHOP', () =>
+      woodButton(this, W / 2, OY + 680, 300, 80, 'SHOP', () =>
         this.scene.start('shop', { back: 'stock', backData: { stage: this.stageIndex } }));
       woodButton(this, W / 2, OY + 790, 300, 80, 'BACK', () => this.scene.start('stages'));
       return;
@@ -597,7 +597,7 @@ class StockScene extends Phaser.Scene {
     const by = OY + 360 + n * 125 + 60;
     woodButton(this, W / 2, by, 320, 90, 'START', () =>
       this.scene.start('game', { stage: this.stageIndex, stock: [...this.stock] }), true, 32);
-    woodButton(this, W / 2 - 150, by + 115, 260, 66, '🛒 SHOP', () =>
+    woodButton(this, W / 2 - 150, by + 115, 260, 66, 'SHOP', () =>
       this.scene.start('shop', { back: 'stock', backData: { stage: this.stageIndex } }), true, 20);
     woodButton(this, W / 2 + 150, by + 115, 260, 66, 'BACK', () => this.scene.start('stages'), true, 20);
   }
@@ -634,6 +634,10 @@ class GameScene extends Phaser.Scene {
     this.st = STAGES[this.stageIndex];
     this.stock = data.stock || STARTER_PRODUCTS;
     this.products = this.stock.map(k => productByKey[k]);
+    // Only use faces whose picture actually loaded (a missing file would show
+    // as a black box), falling back to the original five.
+    this.faces = this.st.customers.filter(k => this.textures.exists(k));
+    if (this.faces.length === 0) this.faces = CUSTOMER_FILES.filter(k => this.textures.exists(k));
   }
 
   create() {
@@ -852,7 +856,7 @@ class GameScene extends Phaser.Scene {
     const r = Math.random();
     if (this.elapsed > COP_AFTER_SECONDS * 1000 && r < st.copChance) kind = 'cop';
     else if (!safe && this.elapsed > ROBBER_AFTER_SECONDS * 1000 && r < st.copChance + st.robberChance) kind = 'robber';
-    const face = kind === 'robber' ? 'cust-robber' : kind === 'cop' ? 'cust-cop' : Phaser.Utils.Array.GetRandom(st.customers);
+    const face = kind === 'robber' ? 'cust-robber' : kind === 'cop' ? 'cust-cop' : Phaser.Utils.Array.GetRandom(this.faces);
 
     // Face in a circle (the part you click or drag) with a badge for what they want.
     const K = FACE_K;
