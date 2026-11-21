@@ -95,12 +95,14 @@ const COP_PROTECT_SECONDS = 30;  // robber-free time after paying him off
 // ======================================================================
 // file: icon image in assets/ (null = a placeholder is drawn until art arrives)
 const PRODUCTS = [
-  { key: 'flower',   name: 'Flower',    pay: 10, cost: 0,    color: 0x6abf2e, file: 'assets/icon-flower.png' },
+  // color: each product's badge color, picked so similar-looking icons are easy
+  // to tell apart (green, pink, orange, purple, red, blue).
+  { key: 'flower',   name: 'Flower',    pay: 10, cost: 0,    color: 0x43a047, file: 'assets/icon-flower.png' },
   { key: 'gummies',  name: 'Gummies',   pay: 10, cost: 0,    color: 0xe040a0, file: 'assets/icon-gummies.png' },
-  { key: 'prerolls', name: 'Pre-rolls', pay: 15, cost: 300,  color: 0xd9a441, file: 'assets/icon-prerolls.png' },
+  { key: 'prerolls', name: 'Pre-rolls', pay: 15, cost: 300,  color: 0xff7a1a, file: 'assets/icon-prerolls.png' },
   { key: 'vape',     name: 'Vape Pens', pay: 20, cost: 600,  color: 0x9c4dcc, file: 'assets/icon-vape.png' },
-  { key: 'brownies', name: 'Brownies',  pay: 25, cost: 900,  color: 0x8d5524, file: 'assets/icon-brownies.png' },
-  { key: 'wax',      name: 'Wax',       pay: 35, cost: 1400, color: 0xffb300, file: 'assets/icon-wax.png' },
+  { key: 'brownies', name: 'Brownies',  pay: 25, cost: 900,  color: 0xd32f2f, file: 'assets/icon-brownies.png' },
+  { key: 'wax',      name: 'Wax',       pay: 35, cost: 1400, color: 0x1e88e5, file: 'assets/icon-wax.png' },
 ];
 const productByKey = Object.fromEntries(PRODUCTS.map(p => [p.key, p]));
 const iconKey = p => `icon-${p.key}`;
@@ -512,7 +514,8 @@ class ShopScene extends Phaser.Scene {
       const y = OY + 240 + i * 118;
       const owned = save.owned.includes(p.key);
       card(this, W / 2, y, 620, 104, owned ? 0x8ee34a : 0x555555);
-      this.add.image(W / 2 - 250, y, iconKey(p)).setDisplaySize(76, 76);
+      this.add.circle(W / 2 - 250, y, 44, p.color).setStrokeStyle(4, 0x14121c);
+      this.add.image(W / 2 - 250, y, iconKey(p)).setDisplaySize(70, 70);
       text(this, W / 2 - 195, y - 18, p.name, 26, '#ffffff', { fontFamily: 'Arial Black, Arial' }).setOrigin(0, 0.5);
       text(this, W / 2 - 195, y + 20, `Pays $${p.pay} per order`, 19, '#c5ff9e').setOrigin(0, 0.5);
       if (owned) {
@@ -581,11 +584,12 @@ class StockScene extends Phaser.Scene {
       const y = OY + 360 + i * 125;
       card(this, W / 2, y, 560, 110, 0x8ee34a);
       text(this, W / 2 - 250, y, shop.name, 26, '#ffffff', { fontFamily: 'Arial Black, Arial' }).setOrigin(0, 0.5);
-      const icon = this.add.image(W / 2 + 90, y, iconKey(productByKey[this.stock[i]])).setDisplaySize(80, 80);
+      const disc = this.add.circle(W / 2 + 90, y, 46, 0xffffff).setStrokeStyle(4, 0x14121c);
+      const icon = this.add.image(W / 2 + 90, y, iconKey(productByKey[this.stock[i]])).setDisplaySize(72, 72);
       const label = text(this, W / 2 + 145, y, '', 20, '#c5ff9e').setOrigin(0, 0.5);
       const hit = this.add.rectangle(W / 2, y, 560, 110, 0xffffff, 0.001).setInteractive({ useHandCursor: true });
       hit.on('pointerdown', () => this.cycle(i));
-      return { icon, label };
+      return { icon, label, disc };
     });
     this.refresh();
 
@@ -611,7 +615,8 @@ class StockScene extends Phaser.Scene {
   refresh() {
     this.slots.forEach((s, i) => {
       const p = productByKey[this.stock[i]];
-      s.icon.setTexture(iconKey(p)).setDisplaySize(80, 80);
+      s.icon.setTexture(iconKey(p)).setDisplaySize(72, 72);
+      s.disc.setFillStyle(p.color);
       s.label.setText(`${p.name}\n$${p.pay}/order`);
     });
   }
@@ -683,7 +688,7 @@ class GameScene extends Phaser.Scene {
 
     // What this shop sells: an icon badge on the corner of the building.
     const [bx, by] = d.badge || [d.x + d.w / 2 - 34, d.y - d.h / 2 + 34];
-    this.add.circle(bx, by, 34, 0x14121c, 0.92).setStrokeStyle(4, product.color).setDepth(3);
+    this.add.circle(bx, by, 36, product.color, 1).setStrokeStyle(5, 0x14121c).setDepth(3);
     this.add.image(bx, by, iconKey(product)).setDisplaySize(52, 52).setDepth(3);
 
     // Combo letters on a dark pill, dim until lit. Spacing shrinks when shops are narrow.
@@ -721,7 +726,7 @@ class GameScene extends Phaser.Scene {
     const ck = cards.k;
     this.products.forEach((p, i) => {
       const [cx, cy] = cards.at[i];
-      this.add.rectangle(cx, cy, 96 * ck, 84 * ck, 0x2a2438).setStrokeStyle(4, p.color).setDepth(31);
+      this.add.rectangle(cx, cy, 96 * ck, 84 * ck, p.color).setStrokeStyle(4, 0x14121c).setDepth(31);
       this.add.image(cx, cy - 10 * ck, iconKey(p)).setDisplaySize(46 * ck, 46 * ck).setDepth(32);
       label(cx, cy + 26 * ck, `$${p.pay}`, px(16 * ck), '#ffffff');
     });
@@ -855,7 +860,7 @@ class GameScene extends Phaser.Scene {
       // Tap zone is wider than the picture so near misses still count.
       .setInteractive({ hitArea: new Phaser.Geom.Circle(35 * K, 35 * K, 50 * K), hitAreaCallback: Phaser.Geom.Circle.Contains, useHandCursor: true });
     const faceImg = this.add.image(bx, by, face).setDisplaySize(65 * K, 65 * K).setDepth(7);
-    const badge = this.add.circle(bx + 29 * K, by + 26 * K, 21 * K, 0x14121c, 0.95).setStrokeStyle(3, product.color).setDepth(8);
+    const badge = this.add.circle(bx + 29 * K, by + 26 * K, 22 * K, product.color, 1).setStrokeStyle(4, 0x14121c).setDepth(8);
     const icon = this.add.image(bx + 29 * K, by + 26 * K, iconKey(product)).setDisplaySize(34 * K, 34 * K).setDepth(9);
 
     const order = { house, product, kind, bubble, parts: [bubble, faceImg, badge, icon], x: bx, y: by, waited: 0 };
@@ -905,7 +910,7 @@ class GameScene extends Phaser.Scene {
 
       const g = UI_K;
       const ghost = this.add.container(pointer.worldX, pointer.worldY).setDepth(50);
-      ghost.add(this.add.circle(0, 0, 34 * g, 0x14121c, 0.85).setStrokeStyle(4, 0xffffff));
+      ghost.add(this.add.circle(0, 0, 34 * g, order.product.color, 1).setStrokeStyle(4, 0xffffff));
       ghost.add(this.add.image(0, 0, iconKey(order.product)).setDisplaySize(52 * g, 52 * g));
       if (this.selected.length > 1) {
         ghost.add(this.add.text(26 * g, -31 * g, `x${this.selected.length}`, {
