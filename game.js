@@ -376,7 +376,10 @@ class TitleScene extends Phaser.Scene {
   constructor() { super('title'); }
 
   preload() {
-    STAGES.forEach(st => { if (st.mapFile) this.load.image(`map-${st.id}`, st.mapFile); });
+    STAGES.forEach(st => {
+      if (st.mapFile) this.load.image(`map-${st.id}`, st.mapFile);
+      this.load.image(`stage-${st.id}`, `assets/stage-${st.id}.png`);   // stage select icon
+    });
     PRODUCTS.forEach(p => { if (p.file) this.load.image(iconKey(p), p.file); });
     const faces = [...new Set(STAGES.flatMap(st => st.customers))];
     ['courier', 'tip', 'jar-coin', 'jar-bill', ...faces,
@@ -467,17 +470,20 @@ class StagesScene extends Phaser.Scene {
       const ready = !!st.map;
       const cleared = save.cleared.includes(st.id);
       card(this, W / 2, y, 600, 200, cleared ? 0xffd54f : unlocked && ready ? 0x8ee34a : 0x666666);
-      if (this.textures.exists(`map-${st.id}`)) {
-        this.add.image(W / 2 - 220, y, `map-${st.id}`).setDisplaySize(120, 180).setAlpha(unlocked ? 1 : 0.35);
+      const iconKeyName = this.textures.exists(`stage-${st.id}`) ? `stage-${st.id}` : `map-${st.id}`;
+      if (this.textures.exists(iconKeyName)) {
+        const img = this.add.image(W / 2 - 207, y, iconKeyName);
+        if (iconKeyName.startsWith('stage-')) img.setDisplaySize(165, 165); else img.setDisplaySize(120, 180);
+        if (!unlocked) img.setAlpha(0.35);
       } else {
-        text(this, W / 2 - 220, y, '?', 64, '#555555');
+        text(this, W / 2 - 207, y, '?', 64, '#555555');
       }
-      text(this, W / 2 - 140, y - 60, `STAGE ${i + 1}: ${st.name.toUpperCase()}`, 26,
+      text(this, W / 2 - 110, y - 60, `STAGE ${i + 1}: ${st.name.toUpperCase()}`, 26,
         '#ffffff', { fontFamily: 'Arial Black, Arial' }).setOrigin(0, 0.5);
-      text(this, W / 2 - 140, y - 20, `${shopCountOf(st)} shops   ·   Goal $${st.goal}   ·   ${st.seconds}s`, 19,
+      text(this, W / 2 - 110, y - 20, `${shopCountOf(st)} shops   ·   Goal $${st.goal}   ·   ${st.seconds}s`, 19,
         '#cccccc').setOrigin(0, 0.5);
       const best = save.best[st.id];
-      text(this, W / 2 - 140, y + 14, best ? `🏆 Best: $${best}${cleared ? '   ✔ Cleared' : ''}` : ' ', 19,
+      text(this, W / 2 - 110, y + 14, best ? `🏆 Best: $${best}${cleared ? '   ✔ Cleared' : ''}` : ' ', 19,
         '#ffd54f').setOrigin(0, 0.5);
 
       let label = 'PLAY', ok = true;
@@ -485,8 +491,8 @@ class StagesScene extends Phaser.Scene {
       else if (!unlocked) { label = 'LOCKED'; ok = false; }
       woodButton(this, W / 2 + 160, y + 58, 200, 60, label,
         () => this.scene.start('stock', { stage: i }), ok, 22);
-      if (!ready) text(this, W / 2 - 140, y + 58, 'Map coming soon', 18, '#888888').setOrigin(0, 0.5);
-      else if (!unlocked) text(this, W / 2 - 140, y + 58, `Clear Stage ${i} first`, 18, '#888888').setOrigin(0, 0.5);
+      if (!ready) text(this, W / 2 - 110, y + 58, 'Map coming soon', 18, '#888888').setOrigin(0, 0.5);
+      else if (!unlocked) text(this, W / 2 - 110, y + 58, `Clear Stage ${i} first`, 18, '#888888').setOrigin(0, 0.5);
     });
 
     const by = OY + 1000;
