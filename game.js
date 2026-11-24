@@ -282,10 +282,30 @@ function text(scene, x, y, str, size, color = '#ffffff', extra = {}) {
   }).setOrigin(0.5);
 }
 
+// Metal button art built from three pieces (left cap, stretchy middle, right cap)
+// so its rounded ends never squash, whatever the button's size.
+function buttonImage(scene, x, y, w, h) {
+  const tex = scene.textures.get('ui-button');
+  const src = tex.getSourceImage();
+  const SW = src.width, SH = src.height, CAP = Math.round(SH * 0.5);
+  if (!tex.has('L')) {
+    tex.add('L', 0, 0, 0, CAP, SH);
+    tex.add('M', 0, CAP, 0, SW - 2 * CAP, SH);
+    tex.add('R', 0, SW - CAP, 0, CAP, SH);
+  }
+  const cap = Math.min(CAP * (h / SH), w / 2 - 1);
+  const c = scene.add.container(x, y);
+  c.add(scene.add.image(-w / 2 + cap / 2, 0, 'ui-button', 'L').setDisplaySize(cap, h));
+  c.add(scene.add.image(0, 0, 'ui-button', 'M').setDisplaySize(w - 2 * cap + 2, h));
+  c.add(scene.add.image(w / 2 - cap / 2, 0, 'ui-button', 'R').setDisplaySize(cap, h));
+  c.setSize(w, h);
+  return c;
+}
+
 function woodButton(scene, x, y, w, h, label, onTap, enabled = true, size = 24) {
-  const img = scene.add.image(x, y, 'ui-button').setDisplaySize(w, h);
+  const img = buttonImage(scene, x, y, w, h);
   const t = text(scene, x, y - 1, label, size, '#ffffff', { fontFamily: 'Arial Black, Arial' });
-  t.setStroke('#3b2a1a', 5);
+  t.setStroke('#14121c', 6);
   if (enabled) {
     img.setInteractive({ useHandCursor: true });
     img.on('pointerdown', () => {
@@ -383,7 +403,7 @@ class TitleScene extends Phaser.Scene {
     PRODUCTS.forEach(p => { if (p.file) this.load.image(iconKey(p), p.file); });
     const faces = [...new Set(STAGES.flatMap(st => st.customers))];
     ['courier', 'tip', 'jar-coin', 'jar-bill', ...faces,
-      'ui-panel-wide', 'ui-panel-tall', 'ui-jar', 'ui-note', 'ui-button', 'star-full', 'star-empty']
+      'ui-panel-wide', 'ui-panel-tall', 'ui-jar', 'ui-note', 'ui-button', 'ui-tray', 'star-full', 'star-empty']
       .forEach(k => this.load.image(k, `assets/${k}.png`));
     for (let i = 0; i < COMBO_WORD.length; i++) {
       this.load.image(`letter-${i}-off`, `assets/letter-${i}-off.png`);
@@ -760,15 +780,15 @@ class GameScene extends Phaser.Scene {
       this.add.image(x, y, 'star-full').setDisplaySize(HUD.starSize, HUD.starSize * 0.97).setDepth(32));
 
     if (HUD.stageLabel) {
-      label(HUD.stageLabel.x, HUD.stageLabel.y, `STAGE ${this.stageIndex + 1}\n${this.st.name.toUpperCase()}`, '20px', '#ffe9c7')
-        .setStroke('#3b2a1a', 5);
+      label(HUD.stageLabel.x, HUD.stageLabel.y, `STAGE ${this.stageIndex + 1}\n${this.st.name.toUpperCase()}`, '20px', '#1c1c24')
+        .setStroke('#ffffff', 4);
     }
 
     const pz = this.products.length > 2 ? HUD.pause4 : HUD.pause;
-    const btn = this.add.image(pz.x, pz.y, 'ui-button').setDisplaySize(pz.w, pz.h).setDepth(31)
+    const btn = buttonImage(this, pz.x, pz.y, pz.w, pz.h).setDepth(31)
       .setInteractive({ useHandCursor: true });
     this.pauseText = label(pz.x, pz.y - 1, 'PAUSE', px(20 * pz.k), '#ffffff');
-    this.pauseText.setStroke('#3b2a1a', 5);
+    this.pauseText.setStroke('#14121c', 6);
     btn.on('pointerdown', () => this.togglePause());
 
     this.updateHud();
@@ -1271,9 +1291,17 @@ class GameScene extends Phaser.Scene {
       text(this, x, y, str, size, color, extra).setDepth(42);
 
     this.add.rectangle(cx, cy, W, H, 0x000000, 0.65).setDepth(40);
-    const box = card(this, cx, cy, 600, 600, won ? 0x8ee34a : 0xff8a80, 0.96).setDepth(41);
+    // Results card: the metal rolling tray once assets/ui-tray.png exists.
+    if (this.textures.exists('ui-tray')) {
+      this.add.image(cx, cy, 'ui-tray').setDisplaySize(680, 680).setDepth(41);
+      const inner = this.add.graphics().setDepth(41);
+      inner.fillStyle(0x14121c, 0.9).fillRoundedRect(cx - 285, cy - 290, 570, 570, 22);
+      inner.lineStyle(4, won ? 0x8ee34a : 0xff8a80).strokeRoundedRect(cx - 285, cy - 290, 570, 570, 22);
+    } else {
+      card(this, cx, cy, 600, 600, won ? 0x8ee34a : 0xff8a80, 0.96).setDepth(41);
+    }
 
-    const title = won ? 'Stage complete!' : (this.stars <= 0 ? 'Out of stars!' : 'Missed the goal');
+    const title = won ? 'STAGE COMPLETE!' : (this.stars <= 0 ? 'OUT OF STARS!' : 'MISSED THE GOAL');
     txt(cx, cy - 255, title, 42, won ? '#c5ff9e' : '#ff8a80', { fontFamily: 'Arial Black, Arial' });
     txt(cx, cy - 200, `Cash: $${this.cash}   (goal $${this.st.goal})`, 26);
     txt(cx, cy - 162, newBest ? `🏆 NEW BEST: $${this.cash}!` : `🏆 Best: $${Math.max(prevBest, this.cash)}`, 22, '#ffd54f');
@@ -1303,7 +1331,7 @@ class GameScene extends Phaser.Scene {
         const b = woodButton(this, x, cy + 230, 250, 72, label, fn, true, 22);
         b.img.setDepth(42); b.t.setDepth(43);
       };
-      btn(cx - 135, 'PLAY AGAIN', () => this.scene.restart({ stage: this.stageIndex, stock: this.stock }));
+      btn(cx - 135, 'RE-UP', () => this.scene.restart({ stage: this.stageIndex, stock: this.stock }));
       btn(cx + 135, 'STAGES', () => this.scene.start('stages'));
     });
   }
