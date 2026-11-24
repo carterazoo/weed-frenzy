@@ -1328,11 +1328,12 @@ class GameScene extends Phaser.Scene {
     // Buttons (after a short delay so a frantic last tap doesn't hit one).
     this.time.delayedCall(500, () => {
       const btn = (x, label, fn) => {
-        const b = woodButton(this, x, cy + 230, 250, 72, label, fn, true, 22);
+        const b = woodButton(this, x, cy + 230, 172, 70, label, fn, true, 20);
         b.img.setDepth(42); b.t.setDepth(43);
       };
-      btn(cx - 135, 'RE-UP', () => this.scene.restart({ stage: this.stageIndex, stock: this.stock }));
-      btn(cx + 135, 'STAGES', () => this.scene.start('stages'));
+      btn(cx - 182, 'RE-UP', () => this.scene.restart({ stage: this.stageIndex, stock: this.stock }));
+      btn(cx, 'SHOP', () => this.scene.start('shop', { back: 'stock', backData: { stage: this.stageIndex } }));
+      btn(cx + 182, 'STAGES', () => this.scene.start('stages'));
     });
   }
 }
